@@ -47,6 +47,7 @@
 | `GXPLLM_MODEL` | `Qwen3.6-35B-A3B` | 서빙 중인 모델 이름 |
 | `GXPLLM_API_KEY` | (없음) | 서버가 인증을 요구할 때만 |
 | `GXPLLM_MAX_TOKENS` | `32768` | 응답 토큰 상한 |
+| `GXPLLM_TIMEOUT_SEC` | `300` | 응답 대기 상한 (초) |
 | `GXPLLM_ENCODING` | `utf-8` | MCP 서버 입출력 인코딩 |
 
 설정 방법은 두 가지입니다. 자세한 설명과 주의사항은
@@ -85,6 +86,11 @@ export GXPLLM_ENDPOINT="http://dgx-spark.internal:8001/v1"  # Linux / macOS
 **`GXPLLM_MAX_TOKENS` 를 낮추지 마십시오.** 추론 모델은 추론과 본문이
 같은 예산을 나눠 씁니다. 실측에서 인구통계 요약표 하나에 추론이 8,000 토큰을
 넘게 썼습니다. 부족하면 응답이 잘리고, 서버는 이를 오류로 거부합니다.
+
+**응답이 timeout 으로 실패하면 `GXPLLM_TIMEOUT_SEC` 를 올리십시오.** 기본 300초입니다.
+추론 모델은 요청에 따라 이 시간을 넘길 수 있습니다. 실측에서 `structure_text` 가
+300초를 넘겨 실패했습니다. 다만 **상한 자체를 없애지는 마십시오** — 서버가
+응답하지 않을 때 무한 대기하면 멈춘 것인지 기다리는 것인지 구분할 수 없습니다.
 
 **API key 는 저장소에 두지 마십시오.** `.mcp.json` 의 `GXPLLM_API_KEY` 에는
 기본값이 없습니다. 값이 필요하면 환경변수로만 주십시오.

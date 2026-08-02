@@ -64,6 +64,25 @@ def read_env(name, default=''):
 ENDPOINT = read_env('GXPLLM_ENDPOINT', DEFAULT_ENDPOINT)
 MODEL = read_env('GXPLLM_MODEL', DEFAULT_MODEL)
 
+# 응답 대기 상한
+#
+# 추론 모델은 추론과 본문이 같은 토큰 예산을 나눠 쓰므로 응답이 느리다.
+# 실측에서 structure_text 하나가 300초를 넘겨 timeout 으로 실패했다.
+# 다른 설정과 달리 이것만 하드코딩이라 조정할 방법이 없었다.
+#
+# **상한을 없애지는 않는다.** 서버가 응답하지 않을 때 무한 대기하면
+# 오케스트레이터가 멈춘 것인지 기다리는 것인지 구분할 수 없다.
+try:
+    TIMEOUT_SEC = int(read_env('GXPLLM_TIMEOUT_SEC', DEFAULT_TIMEOUT_SEC))
+except ValueError:
+    raise SystemExit(
+        f"GXPLLM_TIMEOUT_SEC 를 숫자로 해석할 수 없습니다: "
+        f"{os.environ.get('GXPLLM_TIMEOUT_SEC')!r}"
+    )
+
+if TIMEOUT_SEC < 1:
+    raise SystemExit(f"GXPLLM_TIMEOUT_SEC 는 1 이상이어야 합니다: {TIMEOUT_SEC}")
+
 # 로컬 LLM 서버가 인증을 요구할 때만 쓴다 (vLLM 의 --api-key 등).
 # 비어 있으면 Authorization 헤더를 보내지 않는다.
 #
@@ -264,8 +283,18 @@ def call_llm(messages, max_tokens=DEFAULT_MAX_TOKENS, temperature=DEFAULT_TEMPER
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SEC) as response:
+        with urllib.request.urlopen(request, timeout=TIMEOUT_SEC) as response:
             body = json.loads(response.read().decode('utf-8'))
+    except TimeoutError as exc:
+        # socket timeout 은 URLError 로 안 감싸이는 경로가 있어 따로 잡는다.
+        # 아래 URLError 핸들러에 맡기면 "TimeoutError: timed out" 만 나가고
+        # 무엇을 고쳐야 하는지 알 수 없다.
+        raise RuntimeError(
+            f"로컬 LLM 응답이 {TIMEOUT_SEC}초 안에 오지 않았습니다 ({ENDPOINT}). "
+            f"추론 모델은 응답이 느립니다. 요청 범위를 줄이거나 "
+            f"GXPLLM_TIMEOUT_SEC 를 올리십시오. "
+            f"서버가 살아 있는지는 {ENDPOINT}/models 로 확인할 수 있습니다."
+        ) from exc
     except urllib.error.URLError as exc:
         # 인증 정보는 메시지에 넣지 않는다. 설정 여부만 알린다.
         auth_hint = (

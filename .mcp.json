@@ -8,6 +8,7 @@
         "GXPLLM_MODEL": "${GXPLLM_MODEL:-Qwen3.6-35B-A3B}",
         "GXPLLM_API_KEY": "${GXPLLM_API_KEY}",
         "GXPLLM_MAX_TOKENS": "${GXPLLM_MAX_TOKENS:-32768}",
+        "GXPLLM_TIMEOUT_SEC": "${GXPLLM_TIMEOUT_SEC:-300}",
         "PYTHONIOENCODING": "${GXPLLM_ENCODING:-utf-8}"
       }
     }
