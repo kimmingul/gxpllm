@@ -17,6 +17,7 @@ Hook 동작 검증 테스트
 
 import json
 import py_compile
+import re
 import subprocess
 import sys
 import tempfile
@@ -703,7 +704,7 @@ def test_compile_all():
     Returns:
         (통과 수, 실패 수, 실패 목록)
     """
-    print("\n[1/4] 스크립트 컴파일 검증...")
+    print("\n[1/5] 스크립트 컴파일 검증...")
     targets = sorted(HOOKS_DIR.glob('*.py'))
     if RUNNERS_DIR.is_dir():
         targets += sorted(RUNNERS_DIR.glob('*.py'))
@@ -732,7 +733,7 @@ def test_file_access(root):
     Returns:
         (통과 수, 실패 수, 실패 목록)
     """
-    print(f"\n[2/4] 파일 접근 hook 검증...")
+    print(f"\n[3/5] 파일 접근 hook 검증...")
     passed, failures = 0, []
 
     for desc, tool_name, tool_input, expected in file_access_cases(str(root)):
@@ -768,7 +769,7 @@ def test_bash(root):
     Returns:
         (통과 수, 실패 수, 실패 목록)
     """
-    print(f"\n[3/4] 셸 명령 hook 검증...")
+    print(f"\n[4/5] 셸 명령 hook 검증...")
     passed, failures = 0, []
 
     for desc, command, expected in bash_cases(str(root)):
@@ -804,7 +805,7 @@ def test_fail_closed(root):
     Returns:
         (통과 수, 실패 수, 실패 목록)
     """
-    print(f"\n[4/4] fail-closed 검증...")
+    print(f"\n[5/5] fail-closed 검증...")
     passed, failures = 0, []
 
     cases = [
@@ -833,6 +834,61 @@ def test_fail_closed(root):
     return passed, len(failures), failures
 
 
+def test_hook_wiring():
+    """
+    hooks.json 의 matcher 가 guard_file_access 의 위임 대상을 모두 받는지 검증한다
+
+    guard_file_access 는 셸 도구를 guard_bash 로 넘긴다. 넘기기만 하고
+    hooks.json 이 그 도구를 guard_bash 에 배선하지 않으면, 그 도구는
+    두 hook 을 모두 통과한다. 실제로 PowerShell 이 이 상태였다.
+
+    Returns:
+        (통과 수, 실패 수, 실패 목록)
+    """
+    print("\n[2/5] hook 배선 검증...")
+    passed, failures = 0, []
+
+    with open(HOOKS_DIR / 'hooks.json', encoding='utf-8') as f:
+        config = json.load(f)
+
+    matchers = [
+        entry.get('matcher', '')
+        for event in ('PreToolUse', 'PostToolUse')
+        for entry in config.get('hooks', {}).get(event, [])
+        if any('guard_bash' in h.get('command', '') or 'audit_append' in h.get('command', '')
+               for h in entry.get('hooks', []))
+    ]
+
+    # guard_file_access 가 넘기는 이름을 소스에서 직접 읽는다 (import 없이)
+    source = (HOOKS_DIR / 'guard_file_access.py').read_text(encoding='utf-8')
+    match = re.search(r'SHELL_TOOL_NAMES\s*=\s*frozenset\(\{([^}]*)\}\)', source)
+    delegated = sorted(re.findall(r"'([^']+)'", match.group(1))) if match else []
+
+    if not delegated:
+        failures.append("guard_file_access.SHELL_TOOL_NAMES 를 읽을 수 없습니다")
+        print("  FAIL SHELL_TOOL_NAMES 파싱 실패")
+        return passed, len(failures), failures
+
+    # 'shell' 은 가상의 별칭이라 실제 도구 이름이 아니다. 나머지는 배선되어야 한다.
+    for name in delegated:
+        if name == 'shell':
+            continue
+        covered = [m for m in matchers
+                   if name in [part.lower() for part in m.split('|')]]
+        # PreToolUse(guard_bash) 와 PostToolUse(audit_append) 양쪽에 있어야 한다
+        if len(covered) >= 2:
+            passed += 1
+            print(f"  OK   [배선] {name} -> guard_bash + audit_append")
+        else:
+            failures.append(
+                f"{name}: guard_file_access 가 위임하는데 hooks.json matcher 에 없습니다 "
+                f"(matchers={matchers})"
+            )
+            print(f"  FAIL [배선] {name}  <-- matcher 누락")
+
+    return passed, len(failures), failures
+
+
 def main():
     """메인 함수"""
     print("=" * 80)
@@ -843,10 +899,11 @@ def main():
     total_failed = 0
     all_failures = []
 
-    p, f, fails = test_compile_all()
-    total_passed += p
-    total_failed += f
-    all_failures += fails
+    for test_fn in (test_compile_all, test_hook_wiring):
+        p, f, fails = test_fn()
+        total_passed += p
+        total_failed += f
+        all_failures += fails
 
     with tempfile.TemporaryDirectory() as tmpdir:
         root = make_temp_study(tmpdir)

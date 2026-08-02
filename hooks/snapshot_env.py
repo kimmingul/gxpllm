@@ -89,7 +89,7 @@ def detect_sas_version(config):
             if 'SAS' in line and any(ch.isdigit() for ch in line):
                 return line.strip()[:200], sas_exe
 
-    return 'unknown (실행 파일은 존재)', sas_exe
+    return 'unknown (executable present)', sas_exe
 
 
 def detect_r_version():

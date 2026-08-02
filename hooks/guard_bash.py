@@ -32,9 +32,42 @@ EXIT_ALLOW = 0
 EXIT_BLOCK = 2
 
 # runner 경유 호출 (항상 허용)
+#
+# **반드시 구간 선두에서 match() 로 판정한다. search() 를 쓰면 안 된다.**
+# 예전에는 앵커 없는 search() 였고, 그래서 명령 어디에든 runner 경로
+# 문자열이 있기만 하면 구간 전체가 면제됐다. 실제로 아래가 통과했다.
+#     python -c "print(1)" # scripts/run_sas.py
+#     python -c "print(1)" --note scripts/run_python.py
+# 주석이나 인자에 경로를 끼워 넣는 것만으로 인터프리터 차단이 풀렸다.
+# test_false_positives.py 의 MUST_BLOCK_COMMANDS 에 두 케이스가 있다.
 RUNNER_ALLOW_PATTERN = re.compile(
-    r'scripts[\\/]+(run_sas|run_python|run_r|verify_audit|compare_outputs'
-    r'|init_study|benchmark_codegen)\.py',
+    r'^\s*(?:py|python[0-9.]*)(?:\.exe)?\s+'
+    r'(?:[^\s;&|<>"\']*[\\/])?scripts[\\/]+'
+    r'(?:run_sas|run_python|run_r|verify_audit|compare_outputs'
+    r'|init_study|benchmark_codegen)\.py\b',
+    re.IGNORECASE,
+)
+
+# plugin 자체를 검사·시험하는 개발용 명령
+#
+# CLAUDE.md 와 CONTRIBUTING.md 가 지정한 필수 명령인데 인터프리터 차단에
+# 걸렸다. 개발자가 자기 저장소에서 문서에 적힌 명령을 못 돌리면 plugin 을
+# 끄게 되고, 그것이 가장 확실한 경계 붕괴다.
+#
+# **RUNNER_ALLOW_PATTERN 에 넣지 않는다.** 그쪽은 명령 문자열 어디서든
+# 부분 일치하면 구간 전체를 모든 검사에서 면제한다
+# ('python -c "..." # scripts/run_sas.py' 로 우회 가능).
+# 이쪽은 다음 셋으로 좁힌다.
+#   1. 구간 **선두에서 끝까지** 정확히 일치해야 한다 (^...$)
+#   2. 인자는 장옵션(--flag[=value]) 만 허용한다 — -c / -m 은 못 들어온다
+#   3. check_direct_exec 안에서만 면제한다 — 난독화·변수확장·git·재귀탐색·
+#      데이터경로 검사는 그대로 적용된다
+DEV_COMMAND_PATTERN = re.compile(
+    r'^\s*(?:py|python[0-9.]*)(?:\.exe)?\s+'
+    r'(?:tests[\\/]+(?:run_all|test_[a-z0-9_]+)\.py'
+    r'|scripts[\\/]+verify_environment\.py)'
+    r'(?:\s+--[a-z][a-z0-9-]*(?:[=\s]+(?:"[^"]*"|\'[^\']*\'|[^\s"\';&|<>]+))?)*'
+    r'\s*$',
     re.IGNORECASE,
 )
 
@@ -54,18 +87,18 @@ SHELL_WRAPPER_BASENAMES = {
 
 # 데이터 경로를 시사하는 패턴 (토큰 단위 판정으로 못 잡는 경우 보완)
 DATA_PATH_PATTERNS = [
-    (re.compile(r'[\\/]data[\\/]', re.IGNORECASE),          'data 디렉터리 참조'),
-    (re.compile(r'(^|[\s"\'])data[\\/]', re.IGNORECASE),    'data 디렉터리 참조'),
-    (re.compile(r'[\\/]listings?[\\/]', re.IGNORECASE),     'listings 디렉터리 참조'),
-    (re.compile(r'[\\/]logs[\\/]', re.IGNORECASE),          'logs 디렉터리 참조'),
-    (re.compile(r'\.sas7bdat\b', re.IGNORECASE),            'SAS 데이터셋 참조'),
-    (re.compile(r'\.sas7bndx\b', re.IGNORECASE),            'SAS 인덱스 참조'),
-    (re.compile(r'\.xpt\b', re.IGNORECASE),                 'SAS transport 파일 참조'),
-    (re.compile(r'\.(parquet|feather)\b', re.IGNORECASE),   '분석 데이터 파일 참조'),
-    (re.compile(r'\.(rds|rdata|rda)\b', re.IGNORECASE),     'R 데이터 파일 참조'),
-    (re.compile(r'\b(stdout|stderr)\.txt\b', re.IGNORECASE), '실행 출력 파일 참조'),
-    (re.compile(r'\bexecution\.(log|lst)\b', re.IGNORECASE), '실행 로그 참조'),
-    (re.compile(r'\bprofile\.json\b', re.IGNORECASE),        '데이터 프로파일 참조'),
+    (re.compile(r'[\\/]data[\\/]', re.IGNORECASE),          'reference to data/ directory'),
+    (re.compile(r'(^|[\s"\'])data[\\/]', re.IGNORECASE),    'reference to data/ directory'),
+    (re.compile(r'[\\/]listings?[\\/]', re.IGNORECASE),     'reference to listings/ directory'),
+    (re.compile(r'[\\/]logs[\\/]', re.IGNORECASE),          'reference to logs/ directory'),
+    (re.compile(r'\.sas7bdat\b', re.IGNORECASE),            'reference to SAS dataset'),
+    (re.compile(r'\.sas7bndx\b', re.IGNORECASE),            'reference to SAS index'),
+    (re.compile(r'\.xpt\b', re.IGNORECASE),                 'reference to SAS transport file'),
+    (re.compile(r'\.(parquet|feather)\b', re.IGNORECASE),   'reference to analysis data file'),
+    (re.compile(r'\.(rds|rdata|rda)\b', re.IGNORECASE),     'reference to R data file'),
+    (re.compile(r'\b(stdout|stderr)\.txt\b', re.IGNORECASE), 'reference to execution output file'),
+    (re.compile(r'\bexecution\.(log|lst)\b', re.IGNORECASE), 'reference to execution log'),
+    (re.compile(r'\bprofile\.json\b', re.IGNORECASE),        'reference to data profile'),
 ]
 
 # 인터프리터 실행 파일 이름 (토큰의 basename 과 대조)
@@ -128,16 +161,16 @@ KNOWN_LANGUAGE_DIRS = frozenset({
 # 명령 문자열 어디에 있든 잡아야 하는 인터프리터 호출 패턴
 # cmd.exe /c "python -c print(1)" 처럼 따옴표 안에 숨은 경우를 잡는다
 INTERPRETER_INLINE_PATTERNS = [
-    (re.compile(r'\bpython[0-9.]*(\.exe)?\s+-[cm]\b', re.IGNORECASE), 'Python (인라인)'),
-    (re.compile(r'\bpython[0-9.]*(\.exe)?\s+\S+\.py\b', re.IGNORECASE), 'Python (스크립트)'),
+    (re.compile(r'\bpython[0-9.]*(\.exe)?\s+-[cm]\b', re.IGNORECASE), 'Python (inline)'),
+    (re.compile(r'\bpython[0-9.]*(\.exe)?\s+\S+\.py\b', re.IGNORECASE), 'Python (script)'),
     (re.compile(r'\bRscript\b', re.IGNORECASE),                        'R'),
-    (re.compile(r'\bR\s+-e\b', re.IGNORECASE),                         'R (인라인)'),
+    (re.compile(r'\bR\s+-e\b', re.IGNORECASE),                         'R (inline)'),
     (re.compile(r'\bsas(\.exe)?\s+-', re.IGNORECASE),                  'SAS'),
-    (re.compile(r'\bnode\s+-e\b', re.IGNORECASE),                      'Node.js (인라인)'),
-    (re.compile(r'\bperl\s+-e\b', re.IGNORECASE),                      'Perl (인라인)'),
-    (re.compile(r'\bruby\s+-e\b', re.IGNORECASE),                      'Ruby (인라인)'),
-    (re.compile(r'-File\s+\S+\.(ps1|bat|cmd|sh)\b', re.IGNORECASE),    '스크립트 파일 실행'),
-    (re.compile(r'\S+\.(ps1|bat|cmd|vbs|sh)\b', re.IGNORECASE),        '스크립트 파일 실행'),
+    (re.compile(r'\bnode\s+-e\b', re.IGNORECASE),                      'Node.js (inline)'),
+    (re.compile(r'\bperl\s+-e\b', re.IGNORECASE),                      'Perl (inline)'),
+    (re.compile(r'\bruby\s+-e\b', re.IGNORECASE),                      'Ruby (inline)'),
+    (re.compile(r'-File\s+\S+\.(ps1|bat|cmd|sh)\b', re.IGNORECASE),    'script file execution'),
+    (re.compile(r'\S+\.(ps1|bat|cmd|vbs|sh)\b', re.IGNORECASE),        'script file execution'),
 ]
 
 # 토큰 판정으로 못 잡는 형태를 보완하는 정규식
@@ -153,13 +186,13 @@ DIRECT_EXEC_PATTERNS = [
 
 # 난독화 / 판정 불가 명령
 OBFUSCATION_PATTERNS = [
-    (re.compile(r'-e(nc|ncoded|ncodedcommand)\b', re.IGNORECASE),  'PowerShell 인코딩 명령'),
-    (re.compile(r'\bcertutil\b.*-decode', re.IGNORECASE),          'certutil 디코딩'),
-    (re.compile(r'\bFromBase64String\b', re.IGNORECASE),           'base64 디코딩'),
-    (re.compile(r'\bbase64\s+-d\b', re.IGNORECASE),                'base64 디코딩'),
-    (re.compile(r'\bIEX\b|\bInvoke-Expression\b', re.IGNORECASE),  '동적 명령 실행'),
-    (re.compile(r'\bStart-Process\b', re.IGNORECASE),              '간접 프로세스 실행'),
-    (re.compile(r'\$\(.*\)|`[^`]+`'),                              '명령 치환'),
+    (re.compile(r'-e(nc|ncoded|ncodedcommand)\b', re.IGNORECASE),  'PowerShell encoded command'),
+    (re.compile(r'\bcertutil\b.*-decode', re.IGNORECASE),          'certutil decoding'),
+    (re.compile(r'\bFromBase64String\b', re.IGNORECASE),           'base64 decoding'),
+    (re.compile(r'\bbase64\s+-d\b', re.IGNORECASE),                'base64 decoding'),
+    (re.compile(r'\bIEX\b|\bInvoke-Expression\b', re.IGNORECASE),  'dynamic command execution'),
+    (re.compile(r'\bStart-Process\b', re.IGNORECASE),              'indirect process execution'),
+    (re.compile(r'\$\(.*\)|`[^`]+`'),                              'command substitution'),
 ]
 
 # study 트리를 재귀 탐색해 내용을 읽는 명령
@@ -169,31 +202,31 @@ OBFUSCATION_PATTERNS = [
 # 예: 'Select-String -Path docs\*.md' 는 허용, '-Recurse' 가 붙으면 차단.
 #     범위가 허용 디렉터리인지는 check_data_reference 가 별도로 판정한다.
 RECURSIVE_SEARCH_PATTERNS = [
-    (re.compile(r'\bfindstr\b[^|;&]*\s/[a-z]*s\b', re.IGNORECASE),           'findstr 재귀 검색'),
-    (re.compile(r'-Recurse\b', re.IGNORECASE),                               '재귀 탐색 (-Recurse)'),
+    (re.compile(r'\bfindstr\b[^|;&]*\s/[a-z]*s\b', re.IGNORECASE),           'findstr recursive search'),
+    (re.compile(r'-Recurse\b', re.IGNORECASE),                               'recursive traversal (-Recurse)'),
     (re.compile(r'\bdir\b[^|;&]*\s/s\b', re.IGNORECASE),                     'dir /s'),
-    (re.compile(r'\b(rg|ripgrep|ack|ag)\b', re.IGNORECASE),                  '재귀 텍스트 검색'),
+    (re.compile(r'\b(rg|ripgrep|ack|ag)\b', re.IGNORECASE),                  'recursive text search'),
     (re.compile(r'\bgrep\b[^|;&]*\s-[a-zA-Z]*[rR]\b'),                       'grep -r'),
-    (re.compile(r'\bfind\b[^|;&]*-(exec|type\s+f)', re.IGNORECASE),          'find 재귀 탐색'),
-    (re.compile(r'\brobocopy\b|\bxcopy\b', re.IGNORECASE),                   '대량 파일 복사'),
-    (re.compile(r'\bJoin-Path\b', re.IGNORECASE),                            'Join-Path 경로 조립'),
-    (re.compile(r'\bCompress-Archive\b|\b7z\b|\btar\s+-?c', re.IGNORECASE),  '아카이브 생성'),
-    (re.compile(r'\bfor\s+/[dfrl]\b', re.IGNORECASE),                        'for 반복 실행'),
-    (re.compile(r'\bForEach-Object\b|\|\s*%\s*\{', re.IGNORECASE),           'ForEach-Object 반복'),
-    (re.compile(r'\btree\b', re.IGNORECASE),                                 'tree (디렉터리 구조 노출)'),
+    (re.compile(r'\bfind\b[^|;&]*-(exec|type\s+f)', re.IGNORECASE),          'find recursive traversal'),
+    (re.compile(r'\brobocopy\b|\bxcopy\b', re.IGNORECASE),                   'bulk file copy'),
+    (re.compile(r'\bJoin-Path\b', re.IGNORECASE),                            'Join-Path path assembly'),
+    (re.compile(r'\bCompress-Archive\b|\b7z\b|\btar\s+-?c', re.IGNORECASE),  'archive creation'),
+    (re.compile(r'\bfor\s+/[dfrl]\b', re.IGNORECASE),                        'for loop execution'),
+    (re.compile(r'\bForEach-Object\b|\|\s*%\s*\{', re.IGNORECASE),           'ForEach-Object iteration'),
+    (re.compile(r'\btree\b', re.IGNORECASE),                                 'tree (exposes directory structure)'),
 ]
 
 # git 하위명령 중 파일 내용을 출력하는 것
 # 정규식으로 'git\s+show' 를 찾으면 'git -C . show' 나 'git --no-pager show' 에 빗나간다.
 # 따라서 전역 옵션을 건너뛰고 실제 하위명령 토큰을 찾아 대조한다.
 GIT_CONTENT_SUBCOMMANDS = {
-    'grep':         'git grep (추적 파일 전체 검색)',
-    'show':         'git show (객체 내용 출력)',
-    'cat-file':     'git cat-file (객체 내용 출력)',
-    'archive':      'git archive (트리 전체 추출)',
-    'bundle':       'git bundle (저장소 전체 추출)',
-    'format-patch': 'git format-patch (커밋 내용 출력)',
-    'whatchanged':  'git whatchanged (패치 출력)',
+    'grep':         'git grep (searches every tracked file)',
+    'show':         'git show (prints object contents)',
+    'cat-file':     'git cat-file (prints object contents)',
+    'archive':      'git archive (extracts the whole tree)',
+    'bundle':       'git bundle (extracts the whole repository)',
+    'format-patch': 'git format-patch (prints commit contents)',
+    'whatchanged':  'git whatchanged (prints patches)',
 }
 
 # git 하위명령 + 이 플래그 조합이면 파일 내용이 출력된다
@@ -261,27 +294,27 @@ COMMAND_POSITION_VARIABLE = re.compile(
 
 # 명령을 간접 실행하는 형태 (인터프리터 이름이 토큰으로 안 보이는 경우)
 INDIRECT_EXEC_PATTERNS = [
-    (re.compile(r'\bfor\s+/?%%?[A-Za-z]\b', re.IGNORECASE),      'for 반복 실행'),
+    (re.compile(r'\bfor\s+/?%%?[A-Za-z]\b', re.IGNORECASE),      'for loop execution'),
     (re.compile(r'\bforfiles\b', re.IGNORECASE),                 'forfiles'),
     (re.compile(r'\bwmic\b', re.IGNORECASE),                     'wmic'),
     (re.compile(r'\bmshta\b', re.IGNORECASE),                    'mshta'),
-    (re.compile(r'\bsetx\b', re.IGNORECASE),                     'setx (환경변수 영구 설정)'),
-    (re.compile(r'\brundll32\b|\bregsvr32\b', re.IGNORECASE),    'DLL 경유 실행'),
-    (re.compile(r'\bschtasks\b|\bat\s+\d', re.IGNORECASE),       '예약 실행'),
-    (re.compile(r'\bStart-Job\b|\bInvoke-Command\b', re.IGNORECASE), 'PowerShell 원격/작업 실행'),
+    (re.compile(r'\bsetx\b', re.IGNORECASE),                     'setx (persists an environment variable)'),
+    (re.compile(r'\brundll32\b|\bregsvr32\b', re.IGNORECASE),    'execution via DLL'),
+    (re.compile(r'\bschtasks\b|\bat\s+\d', re.IGNORECASE),       'scheduled execution'),
+    (re.compile(r'\bStart-Job\b|\bInvoke-Command\b', re.IGNORECASE), 'PowerShell remote/job execution'),
 ]
 
 GUIDANCE = """
-  올바른 실행 방법:
+  Correct way to run programs:
     python scripts/run_sas.py    --program programs/sas/t_dm.sas    --purpose exploratory
     python scripts/run_python.py --program programs/python/t_ae.py  --purpose exploratory
     python scripts/run_r.py      --program programs/r/f_km.R        --purpose exploratory
 
-  runner 를 경유해야 다음이 자동으로 기록됩니다.
-    - 입력 데이터셋 SHA-256
-    - 실행 로그 (SAS .log / Python·R 로그)
-    - assertion 결과
-    - manifest.json 및 감사 로그 체인
+  Going through a runner records the following automatically:
+    - SHA-256 of every input dataset
+    - execution log (SAS .log / Python and R logs)
+    - assertion results
+    - manifest.json and the audit log chain
 """
 
 
@@ -336,7 +369,7 @@ def check_obfuscation(command):
     """
     for pattern, label in OBFUSCATION_PATTERNS:
         if pattern.search(command):
-            return f"{label}이 포함되어 내용을 판정할 수 없습니다"
+            return f"Contains {label}, so the command cannot be inspected"
     return None
 
 
@@ -495,13 +528,18 @@ def check_direct_exec(command, tokens, base_dir=None, study_root=None):
     Returns:
         차단 사유 문자열. 문제 없으면 None
     """
-    if RUNNER_ALLOW_PATTERN.search(command):
+    if RUNNER_ALLOW_PATTERN.match(command):
+        return None
+
+    # plugin 개발용 명령은 인터프리터 차단만 면제한다.
+    # 다른 검사(난독화, 변수 확장, git, 재귀 탐색, 데이터 경로)는 그대로 돈다.
+    if DEV_COMMAND_PATTERN.match(command):
         return None
 
     def blocked(label):
         return (
-            f"{label} 직접 실행은 차단됩니다. "
-            f"runner 를 경유해야 로그와 manifest 가 기록됩니다"
+            f"Direct execution of {label} is blocked. "
+            f"Go through a runner so the log and manifest are recorded"
         )
 
     if not tokens:
@@ -530,9 +568,9 @@ def check_direct_exec(command, tokens, base_dir=None, study_root=None):
 
         if basename in SHELL_WRAPPER_BASENAMES:
             return (
-                f"셸 래퍼({basename}) 실행은 차단됩니다. "
-                f"래퍼는 따옴표 안이나 스크립트 파일에 임의 명령을 숨길 수 있어 "
-                f"명령 검사를 우회합니다"
+                f"Shell wrapper ({basename}) execution is blocked. "
+                f"A wrapper can hide arbitrary commands inside quotes or a script "
+                f"file, bypassing command inspection"
             )
 
         if basename in INTERPRETER_BASENAMES:
@@ -549,7 +587,7 @@ def check_direct_exec(command, tokens, base_dir=None, study_root=None):
     # 3. 간접 실행 형태 (실행될 명령을 검사할 수 없는 경우)
     for pattern, label in INDIRECT_EXEC_PATTERNS:
         if pattern.search(command):
-            return f"{label} 은(는) 차단됩니다. 실행될 명령을 검사할 수 없습니다"
+            return f"{label} is blocked. The command it would run cannot be inspected"
 
     # 4. 정규식 보완
     for pattern, label in DIRECT_EXEC_PATTERNS:
@@ -584,7 +622,7 @@ def check_variable_expansion(segment, tokens):
     Returns:
         차단 사유 문자열. 문제 없으면 None
     """
-    if RUNNER_ALLOW_PATTERN.search(segment):
+    if RUNNER_ALLOW_PATTERN.match(segment):
         return None
 
     if not tokens:
@@ -603,8 +641,8 @@ def check_variable_expansion(segment, tokens):
         cleaned = token.strip().strip('"').strip("'")
         if COMMAND_POSITION_VARIABLE.match(cleaned):
             return (
-                f"변수 확장({cleaned[:40]})은 차단됩니다. "
-                f"확장 결과를 검사할 수 없어 임의 명령을 숨길 수 있습니다"
+                f"Variable expansion ({cleaned[:40]}) is blocked. "
+                f"The expanded result cannot be inspected, so it can hide arbitrary commands"
             )
 
     return None
@@ -651,8 +689,8 @@ def check_git(tokens):
         if previous in ('-c', '--config', 'config') or cleaned.count('=') >= 1:
             if previous in ('-c', '--config', 'config'):
                 return (
-                    "git alias 설정은 차단됩니다. "
-                    "alias 로 임의의 하위명령이나 외부 명령을 실행할 수 있습니다"
+                    "Setting a git alias is blocked. "
+                    "An alias can run an arbitrary subcommand or external command"
                 )
 
     # 전역 옵션을 건너뛰고 하위명령을 찾는다
@@ -673,8 +711,8 @@ def check_git(tokens):
 
     if subcommand in GIT_CONTENT_SUBCOMMANDS:
         return (
-            f"{GIT_CONTENT_SUBCOMMANDS[subcommand]} 은(는) 차단됩니다. "
-            f"커밋된 데이터가 있으면 내용이 그대로 노출됩니다"
+            f"{GIT_CONTENT_SUBCOMMANDS[subcommand]} is blocked. "
+            f"If any data was committed, its contents would be exposed verbatim"
         )
 
     flags = GIT_CONTENT_FLAGS.get(subcommand)
@@ -684,14 +722,14 @@ def check_git(tokens):
             for flag in flags:
                 if token == flag or token.startswith(flag + '='):
                     return (
-                        f"git {subcommand} {flag} 은(는) 차단됩니다. "
-                        f"커밋된 파일 내용이 패치로 출력됩니다"
+                        f"git {subcommand} {flag} is blocked. "
+                        f"Committed file contents would be printed as a patch"
                     )
             # -U3 처럼 값이 붙은 형태
             if subcommand == 'log' and re.fullmatch(r'-U\d+', token):
                 return (
-                    "git log -U 은(는) 차단됩니다. "
-                    "커밋된 파일 내용이 패치로 출력됩니다"
+                    "git log -U is blocked. "
+                    "Committed file contents would be printed as a patch"
                 )
 
     # git diff / log 에 커밋 범위가 오면 커밋 간 전체 내용이 출력된다
@@ -710,8 +748,8 @@ def check_git(tokens):
         for token in rest:
             if GIT_RANGE_PATTERN.search(token):
                 return (
-                    f"커밋 범위 표기가 있는 git {subcommand} 는 차단됩니다 ({token}). "
-                    f"커밋 간 파일 내용이 출력됩니다"
+                    f"git {subcommand} with commit range notation is blocked ({token}). "
+                    f"File contents across commits would be printed"
                 )
 
         # 커밋 참조가 둘 이상이면 범위 비교다.
@@ -720,8 +758,8 @@ def check_git(tokens):
             refs = [t for t in rest if '/' not in t and '\\' not in t and '.' not in t]
             if len(refs) > GIT_DIFF_MAX_REFS:
                 return (
-                    f"커밋 참조가 여러 개인 git diff 는 차단됩니다 "
-                    f"({', '.join(refs[:3])}). 커밋 간 전체 내용이 출력됩니다"
+                    f"git diff with multiple commit references is blocked "
+                    f"({', '.join(refs[:3])}). Full contents across commits would be printed"
                 )
 
     return None
@@ -740,15 +778,15 @@ def check_recursive_search(command):
     Returns:
         차단 사유 문자열. 문제 없으면 None
     """
-    if RUNNER_ALLOW_PATTERN.search(command):
+    if RUNNER_ALLOW_PATTERN.match(command):
         return None
 
     for pattern, label in RECURSIVE_SEARCH_PATTERNS:
         if pattern.search(command):
             return (
-                f"{label} 은(는) 차단됩니다. "
-                f"study 트리를 훑으면 data/ 안의 피험자 데이터가 노출될 수 있습니다. "
-                f"파일 목록은 Glob 도구로 허용 디렉터리를 명시해 조회하십시오"
+                f"{label} is blocked. "
+                f"Sweeping the study tree can expose subject data under data/. "
+                f"To list files, use the Glob tool with an explicit allowed directory"
             )
     return None
 
@@ -792,7 +830,7 @@ def check_data_reference(command, tokens, study_root, config, base_dir=None):
 
         # 경로 구분자 없이 디렉터리 이름만 쓴 경우 (git grep -- data)
         if check_bare and cleaned.lower().strip('/\\') in BARE_DIR_TOKENS:
-            return f"차단된 디렉터리 이름입니다 ({cleaned})", cleaned
+            return f"Blocked directory name ({cleaned})", cleaned
 
         if not looks_like_path(cleaned):
             continue
@@ -881,7 +919,7 @@ def main():
     try:
         payload = read_hook_payload()
     except Exception as exc:
-        print(f"[gxpllm-guard] hook 입력을 해석할 수 없어 차단합니다: {exc}", file=sys.stderr)
+        print(f"[gxpllm-guard] Blocked: cannot parse hook input: {exc}", file=sys.stderr)
         sys.exit(EXIT_BLOCK)
 
     # --- 판정 --------------------------------------------------------------
@@ -902,10 +940,10 @@ def main():
             if reason:
                 record_block(study_root, command, reason)
                 print(
-                    f"[gxpllm-guard] 명령 차단\n"
-                    f"  명령: {command[:300]}\n"
-                    f"  구간: {segment[:200]}\n"
-                    f"  사유: {reason}\n"
+                    f"[gxpllm-guard] Command blocked\n"
+                    f"  command: {command[:300]}\n"
+                    f"  segment: {segment[:200]}\n"
+                    f"  reason:  {reason}\n"
                     f"{GUIDANCE}",
                     file=sys.stderr,
                 )
@@ -917,7 +955,7 @@ def main():
         raise
     except Exception as exc:
         print(
-            f"[gxpllm-guard] 내부 오류로 차단합니다 (fail-closed): "
+            f"[gxpllm-guard] Blocked by internal error (fail-closed): "
             f"{type(exc).__name__}: {exc}",
             file=sys.stderr,
         )

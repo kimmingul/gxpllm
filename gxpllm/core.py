@@ -158,8 +158,9 @@ def load_config(start_dir=None, required=False):
     if root is None:
         if required:
             raise FileNotFoundError(
-                f"{CONFIG_RELATIVE_PATH} 를 찾을 수 없습니다. "
-                f"study 디렉터리 안에서 실행하십시오. (탐색 시작: {start_dir or os.getcwd()})"
+                f"{CONFIG_RELATIVE_PATH} not found. "
+                f"Run this inside a study directory. "
+                f"(search started at: {start_dir or os.getcwd()})"
             )
         return {}
 
@@ -393,7 +394,7 @@ def classify_path(target_path, study_root=None, config=None, base_dir=None, mode
     # --- 1. 임상 데이터 고유 확장자는 위치와 무관하게 항상 거부 ---------------
     for ext in get_blocked_extensions(config):
         if normalized.endswith(ext):
-            return f"임상 데이터 파일 확장자입니다 ({ext})"
+            return f"Clinical data file extension ({ext})"
 
     relative, inside = resolve_relative(target_path, study_root, base_dir)
 
@@ -403,7 +404,8 @@ def classify_path(target_path, study_root=None, config=None, base_dir=None, mode
         if study_root is None and (normalized.startswith('data/')
                                    or normalized.startswith('./data/')
                                    or '/data/' in '/' + normalized):
-            return "임상 데이터 디렉터리 경로로 보입니다 (study 설정을 찾을 수 없어 보수적으로 차단)"
+            return ("Looks like a clinical data directory path "
+                    "(blocked conservatively because no study config was found)")
         return None
 
     writing = str(mode).lower() == 'write'
@@ -412,16 +414,17 @@ def classify_path(target_path, study_root=None, config=None, base_dir=None, mode
     if _is_under(relative, 'logs'):
         if writing:
             return (
-                f"logs/ 에는 쓸 수 없습니다 ({relative}). "
-                f"실행 기록은 runner 만 생성합니다. manifest 를 직접 만들면 감사 증적이 무너집니다"
+                f"Cannot write under logs/ ({relative}). "
+                f"Only a runner creates execution records. Writing a manifest by hand "
+                f"breaks the audit trail"
             )
         filename = relative.rsplit('/', 1)[-1]
         if filename in get_allowed_log_files(config):
             return None
         return (
-            f"실행 로그는 읽을 수 없습니다 ({relative}). "
-            f"프로그램 출력에는 피험자 데이터가 포함될 수 있습니다. "
-            f"manifest.json 과 assertions.json 만 읽을 수 있습니다"
+            f"Execution logs cannot be read ({relative}). "
+            f"Program output may contain subject data. "
+            f"Only manifest.json and assertions.json are readable"
         )
 
     # --- 4. 허용 디렉터리 확인 (기본 거부) -----------------------------------
@@ -436,8 +439,8 @@ def classify_path(target_path, study_root=None, config=None, base_dir=None, mode
                 and relative.endswith(('.md', '.txt', '.json', '.yaml', '.yml'))):
             return None
         return (
-            f"허용되지 않은 경로입니다 ({relative}). "
-            f"{'쓸' if writing else '읽을'} 수 있는 위치: "
+            f"Path is not allowed ({relative}). "
+            f"{'Writable' if writing else 'Readable'} locations: "
             f"{', '.join(get_writable_dirs() if writing else allowed_dirs)}"
         )
 
@@ -446,11 +449,11 @@ def classify_path(target_path, study_root=None, config=None, base_dir=None, mode
         writable = get_writable_dirs()
         if not any(_is_under(relative, prefix) for prefix in writable):
             reason_map = {
-                '.gxpllm': '설정을 고치면 경계 정책 자체를 무력화할 수 있습니다',
-                'audit': '감사 기록을 고치면 차단 이력을 말소할 수 있습니다',
-                'output/tables': '산출물은 runner 가 실행한 프로그램만 생성합니다',
-                'output/figures': '산출물은 runner 가 실행한 프로그램만 생성합니다',
-                'scripts': 'runner 는 plugin 이 관리합니다',
+                '.gxpllm': 'Editing the config could disable the boundary policy itself',
+                'audit': 'Editing the audit record could erase the history of blocks',
+                'output/tables': 'Outputs are produced only by programs a runner executed',
+                'output/figures': 'Outputs are produced only by programs a runner executed',
+                'scripts': 'Runners are managed by the plugin',
             }
             detail = ''
             for prefix, why in reason_map.items():
@@ -458,8 +461,8 @@ def classify_path(target_path, study_root=None, config=None, base_dir=None, mode
                     detail = f" {why}."
                     break
             return (
-                f"쓰기가 허용되지 않은 경로입니다 ({relative}).{detail} "
-                f"쓸 수 있는 위치: {', '.join(writable)}"
+                f"Path is not writable ({relative}).{detail} "
+                f"Writable locations: {', '.join(writable)}"
             )
 
     # --- 5. 눈가림: output/ 산출물에만 적용 ----------------------------------
@@ -469,7 +472,7 @@ def classify_path(target_path, study_root=None, config=None, base_dir=None, mode
             for keyword in BLIND_KEYWORDS:
                 if keyword in filename:
                     return (
-                        f"눈가림(blinded) 상태에서 치료군 관련 산출물은 읽을 수 없습니다 "
+                        f"While blinded, treatment-related outputs cannot be read "
                         f"({keyword})"
                     )
 
@@ -501,8 +504,8 @@ def classify_search_scope(target_path, study_root=None, config=None, base_dir=No
     if not target_path or not str(target_path).strip():
         if SEARCH_REQUIRES_EXPLICIT_SCOPE:
             return (
-                f"검색 범위를 명시해야 합니다. "
-                f"path 를 다음 중 하나로 지정하십시오: {', '.join(allowed_dirs)}"
+                f"Search scope must be explicit. "
+                f"Set path to one of: {', '.join(allowed_dirs)}"
             )
         return None
 
@@ -515,9 +518,9 @@ def classify_search_scope(target_path, study_root=None, config=None, base_dir=No
         return None
 
     return (
-        f"검색 범위가 허용 디렉터리 밖입니다 ({relative or '(study 루트)'}). "
-        f"data/ 를 포함한 범위 검색은 피험자 데이터를 노출할 수 있습니다. "
-        f"path 를 다음 중 하나로 지정하십시오: {', '.join(allowed_dirs)}"
+        f"Search scope is outside the allowed directories ({relative or '(study root)'}). "
+        f"A scope that includes data/ can expose subject data. "
+        f"Set path to one of: {', '.join(allowed_dirs)}"
     )
 
 
@@ -930,17 +933,19 @@ def verify_audit_chain(audit_path):
             try:
                 entry = json.loads(raw)
             except ValueError as exc:
-                problems.append(f"{line_no}행: JSON 파싱 실패 ({exc})")
+                problems.append(f"line {line_no}: JSON parse failed ({exc})")
                 return False, problems, count
 
             if entry.get('seq') != expected_seq:
                 problems.append(
-                    f"{line_no}행: seq 불일치 (기대 {expected_seq}, 실제 {entry.get('seq')})"
+                    f"line {line_no}: seq mismatch "
+                    f"(expected {expected_seq}, actual {entry.get('seq')})"
                 )
 
             if entry.get('prev_hash') != expected_prev:
                 problems.append(
-                    f"{line_no}행: prev_hash 불일치 — 앞선 항목이 변조/삭제되었습니다"
+                    f"line {line_no}: prev_hash mismatch - an earlier entry was "
+                    f"altered or deleted"
                 )
 
             # 알고리즘 다운그레이드 거부
@@ -952,19 +957,22 @@ def verify_audit_chain(audit_path):
 
             if key is not None and entry_alg != 'hmac-sha256':
                 problems.append(
-                    f"{line_no}행: 서명 알고리즘 다운그레이드 (기대 hmac-sha256, "
-                    f"실제 {entry_alg}) — 체인이 재작성되었을 수 있습니다"
+                    f"line {line_no}: signature algorithm downgraded "
+                    f"(expected hmac-sha256, actual {entry_alg}) - the chain may "
+                    f"have been rewritten"
                 )
             elif key is None and entry_alg == 'hmac-sha256':
                 problems.append(
-                    f"{line_no}행: HMAC 서명 항목인데 키를 읽을 수 없어 검증 불가"
+                    f"line {line_no}: entry is HMAC-signed but the key cannot be "
+                    f"read, so it cannot be verified"
                 )
             else:
                 entry_key = key if entry_alg == 'hmac-sha256' else None
                 recomputed = compute_entry_hash(entry, entry_key)
                 if entry.get('entry_hash') != recomputed:
                     problems.append(
-                        f"{line_no}행: entry_hash 불일치 — 이 항목의 내용이 변조되었습니다"
+                        f"line {line_no}: entry_hash mismatch - the contents of "
+                        f"this entry were altered"
                     )
 
             expected_prev = entry.get('entry_hash', GENESIS_HASH)
@@ -1057,7 +1065,7 @@ def ensure_purpose(purpose):
     """
     if purpose not in VALID_PURPOSES:
         raise ValueError(
-            f"purpose 는 {', '.join(VALID_PURPOSES)} 중 하나여야 합니다 (입력: {purpose})"
+            f"purpose must be one of {', '.join(VALID_PURPOSES)} (got: {purpose})"
         )
     return purpose
 

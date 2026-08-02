@@ -80,6 +80,16 @@ EVERYDAY_COMMANDS = [
     'which python',
     'command -v python',
     'Get-Command python',
+    # plugin 개발용 명령 (CLAUDE.md / CONTRIBUTING.md 가 지정한 필수 명령)
+    'python tests/run_all.py',
+    'python tests\\run_all.py',
+    'python tests/test_hooks.py',
+    'python tests/test_false_positives.py',
+    'py tests/run_all.py',
+    'python scripts/verify_environment.py',
+    'python scripts/verify_environment.py --study .',
+    'python scripts/verify_environment.py --only llm',
+    'python scripts/verify_environment.py --skip-llm --output validation/env.json',
 ]
 
 # 반드시 차단되어야 하는 명령 (누수 확인)
@@ -104,6 +114,18 @@ MUST_BLOCK_COMMANDS = [
     'Rscript x.R',
     'for %A in (python) do %A payload',
     'wmic process call create python',
+    # 개발용 명령 허용(DEV_COMMAND_PATTERN)이 열어서는 안 되는 것들
+    'python -c "print(1)" # tests/run_all.py',
+    'python tests/run_all.py -c "print(1)"',
+    'python tests/run_all.py && python -c "print(1)"',
+    'python tests/run_all.py --study data/raw',
+    'python tests/evil.py',
+    'python ../tests/run_all.py',
+    'python scripts/verify_environment.py.bak',
+    # RUNNER_ALLOW_PATTERN 은 .search() 라 구간 어디서든 부분 일치한다.
+    # 주석/인자에 runner 경로를 끼워 넣어 면제받을 수 있는지 확인한다.
+    'python -c "print(1)" # scripts/run_sas.py',
+    'python -c "print(1)" --note scripts/run_python.py',
 ]
 
 STUDY_SUBDIRS = (

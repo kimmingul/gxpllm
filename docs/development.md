@@ -3,7 +3,7 @@
 **대상 시스템**: SAS 9.4 (개인 PC 설치) + Python + R
 **로컬 LLM**: Qwen3.6-35B-A3B (NVIDIA DGX Spark, vLLM)
 **오케스트레이터**: Claude Code (Opus)
-**문서 버전**: 0.8 (2026-08-03) — 적대적 검토 6회 + 실서버 실측 1회 반영
+**문서 버전**: 0.9 (2026-08-03) — 적대적 검토 6회 + 실서버 실측 1회 + 실사용 설치 검토 1회 반영
 
 > **개정 이력**
 >
@@ -124,6 +124,50 @@
 > assertion API 일치, runner, MCP, **LLM 경로(모의 서버)**, 실측 도구 전부 통과.
 > 오탐 프로브 44건 통과.
 > 실서버 검증은 `tests/test_live_llm.py` (서버가 있는 PC 에서 별도 실행).
+>
+> **0.8 → 0.9**: plugin 을 실제로 설치해 개발하는 과정에서 세 결함이 드러났다.
+> 적대적 검토가 아니라 **평범한 개발 작업**에서 나왔다는 점이 공통점이다.
+>
+> - **`RUNNER_ALLOW_PATTERN` 이 앵커 없는 `search()` 였다.** 명령 어디에든
+>   runner 경로 문자열이 있기만 하면 구간 전체가 인터프리터·변수확장·재귀탐색
+>   검사에서 면제됐다. 주석 한 줄이면 충분했다.
+>   ```
+>   python -c "print(1)" # scripts/run_sas.py          <- 통과했다
+>   python -c "print(1)" --note scripts/run_python.py  <- 통과했다
+>   ```
+>   조치: 구간 **선두 고정 + `match()`** 로 바꿨다 (§4.4).
+>
+> - **PowerShell 도구가 두 hook 을 모두 통과했다.** `guard_file_access` 는
+>   `powershell` 을 guard_bash 가 담당한다고 보고 넘기는데, `hooks.json` 의
+>   matcher 는 `"Bash"` 뿐이라 받는 쪽이 없었다. 위임과 배선이 어긋난 것이다.
+>   조치: matcher 를 `"Bash|PowerShell"` 로 고치고, 위임 목록을
+>   `SHELL_TOOL_NAMES` 상수로 뺀 뒤 `test_hooks.py` 의 `test_hook_wiring()` 이
+>   둘의 일치를 검사하게 했다. 배선을 빼먹으면 테스트가 실패한다.
+>
+> - **오탐: 이 저장소 자신의 필수 명령이 막혔다.** `python tests/run_all.py` 와
+>   `python scripts/verify_environment.py` 는 CLAUDE.md 와 CONTRIBUTING.md 가
+>   지정한 명령인데 인터프리터 차단에 걸렸다. 개발자가 문서대로 못 하면
+>   plugin 을 끄게 되고, 그것이 가장 확실한 경계 붕괴다.
+>   조치: `RUNNER_ALLOW_PATTERN` 에 이름을 **추가하지 않고** 별도의
+>   `DEV_COMMAND_PATTERN` 을 만들었다 (§4.4). 위 첫 번째 결함 때문이다 —
+>   그쪽에 넣었다면 같은 우회 창을 넓히는 셈이 된다.
+>
+> 함께 고친 것:
+> - hook 이 내보내는 모든 메시지를 **영어로** 바꿨다. Windows 한국어 콘솔은
+>   cp949 라 한글 차단 사유가 깨져서 읽을 수 없었다. **차단 이유를 못 읽으면
+>   오탐인지 정당한 차단인지 판단조차 못 한다** — 차단 자체보다 나쁘다.
+>   `gxpllm/core.py` 의 차단 사유 문자열도 hook 이 그대로 출력하므로 함께 바꿨다.
+> - `tests/run_all.py` 가 cp949 콘솔에서 `UnicodeEncodeError` 로 죽었다.
+>   요약 문자열의 em dash 하나 때문이었다. 출력 스트림을 utf-8 로 고정했다.
+>
+> **검증**: `tests/run_all.py` — 경계 **329건**(327 + hook 배선 2건),
+> 오탐 프로브 일상 53건 / 차단 29건, 나머지 전부 통과.
+>
+> **알려진 제약**: `DEV_COMMAND_PATTERN` 은 구간 선두부터 끝까지 정확히
+> 일치해야 하고 장옵션(`--flag`)만 허용한다. 따라서 리디렉션이나 파이프를
+> 붙인 형태(`python tests/run_all.py 2>&1 | tail`)는 여전히 막힌다.
+> 앵커를 풀면 위 첫 번째 결함과 같은 구멍이 다시 열리므로 **의도한 제약**이다.
+> 그냥 `python tests/run_all.py` 로 실행하십시오.
 
 ---
 
@@ -397,6 +441,30 @@ python -c "from pathlib import Path;a='da';b='ta';print((Path(root)/(a+b)/'raw'/
 
 **명령 체이닝 대응**: 명령을 `&&`, `||`, `;`, `|`, `&` 로 나눠 각 구간을 독립 판정한다.
 `python scripts/run_sas.py --program x && python -c "..."` 는 두 번째 구간에서 차단된다.
+
+**허용 판정은 반드시 앵커를 건다.** runner 허용은 구간 **선두에서 `match()`** 로만
+한다. 앵커 없는 `search()` 였을 때 다음이 전부 통과했다.
+
+```bash
+python -c "print(1)" # scripts/run_sas.py           # 주석에 경로만 끼워 넣으면 면제
+python -c "print(1)" --note scripts/run_python.py   # 인자에 넣어도 면제
+```
+
+허용 목록은 "이 문자열이 어딘가 있으면 봐준다" 가 아니라
+"이 명령이 정확히 그것이면 봐준다" 여야 한다.
+
+**개발용 명령 예외** (`DEV_COMMAND_PATTERN`): `python tests/run_all.py`,
+`python tests/test_*.py`, `python scripts/verify_environment.py` 는 이 plugin 자신을
+시험하는 명령이라 인터프리터 차단만 면제한다. runner 허용과 **분리해서** 둔다.
+`RUNNER_ALLOW_PATTERN` 에 이름을 얹으면 구간 전체가 모든 검사에서 면제되지만,
+이쪽은 세 겹으로 좁혔다.
+
+1. 구간 선두부터 끝까지 정확히 일치 (`^...$`)
+2. 인자는 장옵션(`--flag[=value]`)만 — `-c` / `-m` 이 들어올 수 없다
+3. `check_direct_exec` 안에서만 면제 — 난독화·변수확장·git·재귀탐색·
+   **데이터 경로** 검사는 그대로 적용된다
+
+`python tests/run_all.py --study data/raw` 가 여전히 차단되는 이유가 3번이다.
 
 **셸 래퍼 전면 차단**: `cmd`, `powershell`, `pwsh`, `sh`, `bash`, `wsl`, `wscript` 등.
 래퍼는 두 가지 우회 통로를 연다.

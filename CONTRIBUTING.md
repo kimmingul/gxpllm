@@ -32,12 +32,90 @@ python tests/run_all.py
 **경계 관련 코드를 고쳤다면 `tests/test_hooks.py` 의 통과 건수가 줄지 않았는지
 확인하십시오.** 건수가 줄었다면 케이스를 지운 것입니다.
 
+## plugin 을 로컬에서 돌려볼 때
+
+**clone 한 디렉터리를 그냥 열면 MCP 서버가 뜨지 않습니다.**
+
+`.mcp.json` 의 `${CLAUDE_PLUGIN_ROOT}` 는 **설치된 plugin 에만** 주입됩니다.
+저장소를 clone 해서 그 디렉터리에서 Claude Code 를 열면 `.mcp.json` 이
+project-scoped 설정으로 읽히고, 변수가 빈 채로 남아 경로가 깨집니다.
+서버 프로세스가 즉시 죽고 `Failed to reconnect to local-coder: -32000` 만 보입니다.
+승인 문제로 보이지만 승인과 무관합니다.
+
+로컬 clone 을 marketplace 로 등록해 설치하십시오.
+
+```
+/plugin marketplace add <clone 경로>
+/plugin install gxpllm@gxpllm
+/reload-plugins
+```
+
+`/mcp` 에 `plugin_gxpllm_local-coder` 로 뜨면 정상입니다.
+
+**설치본은 커밋 시점 스냅샷입니다.** `~/.claude/plugins/cache/` 로 복사되며
+작업 디렉터리를 참조하지 않습니다. 수정이 반영되지 않으면 대개 커밋을 안 한 것입니다.
+
+```
+수정 → 커밋 → /plugin update gxpllm@gxpllm → /reload-plugins
+```
+
+같은 디렉터리에서 계속 작업하면 project `.mcp.json` 의 `local-coder` 가
+중복으로 등록되어 계속 실패합니다. `.claude/settings.local.json` 에서 끄십시오.
+이 파일은 커밋되지 않습니다.
+
+```json
+{ "disabledMcpjsonServers": ["local-coder"] }
+```
+
+**설치하면 hook 이 이 저장소에서도 돕니다.** `.gxpllm/config.json` 이 없어
+`study_root` 가 `None` 이므로 대부분 통과하고, `python tests/run_all.py` 와
+`python scripts/verify_environment.py` 는 `DEV_COMMAND_PATTERN` 으로 허용됩니다
+(`hooks/guard_bash.py`).
+
+다만 이 예외는 **구간 선두부터 끝까지 정확히 일치**해야 하고 장옵션만 받습니다.
+리디렉션이나 파이프를 붙이면 막힙니다.
+
+```bash
+python tests/run_all.py              # OK
+python tests/run_all.py 2>&1 | tail  # 차단됨 — 의도한 제약입니다
+```
+
+앵커를 풀면 `python -c "..." # scripts/run_sas.py` 류의 우회가 다시 열립니다
+(`docs/development.md` 0.8 → 0.9 참조). 그냥 붙여서 실행하십시오.
+
+개발용 명령이 막히면 **우회하지 말고** 오탐으로 처리하십시오
+(아래 "오탐 보고를 받으면").
+
 ## 새 차단 규칙을 추가할 때
 
 1. `tests/test_hooks.py` 에 **차단 케이스**를 추가합니다.
 2. `tests/test_hooks.py` 에 그 규칙이 막으면 안 되는 **허용 케이스**도 추가합니다.
 3. `tests/test_false_positives.py` 의 일상 명령이 여전히 통과하는지 확인합니다.
 4. `docs/development.md` §4 에 규칙과 그 근거를 기록합니다.
+
+## 허용 규칙을 추가할 때
+
+차단보다 위험합니다. 둘을 지키십시오.
+
+**1. 앵커를 거십시오.** 허용 판정은 `search()` 가 아니라 구간 선두에서
+`match()` 로 합니다. 앵커가 없으면 주석이나 인자에 문자열을 끼워 넣는 것만으로
+면제받을 수 있습니다. `RUNNER_ALLOW_PATTERN` 이 실제로 이 상태였습니다.
+
+**2. 면제 범위를 최소로 좁히십시오.** 구간 전체를 모든 검사에서 빼는 대신,
+필요한 검사 하나에서만 빼십시오. `DEV_COMMAND_PATTERN` 은 `check_direct_exec`
+안에서만 면제하므로 데이터 경로 검사는 그대로 적용됩니다.
+
+## hook 과 core 의 메시지는 영어로 씁니다
+
+대상은 `hooks/*.py` 와 `gxpllm/core.py` 입니다. 차단 사유, 감사 체인 검증 결과,
+설정 오류 메시지가 전부 사용자 콘솔로 나갑니다. Windows 한국어 환경의 기본
+콘솔은 cp949 라 한글이 깨집니다.
+
+**차단 이유를 읽을 수 없으면 오탐인지 정당한 차단인지 판단할 수 없고,
+사용자는 그냥 plugin 을 끕니다.** 차단 자체보다 나쁩니다.
+
+주석과 docstring 은 한글 그대로 둡니다. 사용자에게 나가는 문자열만 영어입니다.
+`scripts/*.py` (runner) 의 진행 출력은 아직 한글입니다.
 
 ## 오탐 보고를 받으면
 

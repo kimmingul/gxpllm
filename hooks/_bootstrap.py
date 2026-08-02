@@ -39,7 +39,7 @@ def read_hook_payload():
     """
     raw = sys.stdin.buffer.read()
     if not raw:
-        raise ValueError("hook 입력이 비어 있습니다")
+        raise ValueError("hook input is empty")
 
     for encoding in ('utf-8-sig', 'utf-8', 'cp949', 'latin-1'):
         try:
@@ -56,4 +56,4 @@ def read_hook_payload():
         if isinstance(payload, dict):
             return payload
 
-    raise ValueError("hook 입력을 JSON 객체로 해석할 수 없습니다")
+    raise ValueError("hook input cannot be parsed as a JSON object")

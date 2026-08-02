@@ -19,6 +19,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Windows 한국어 환경의 기본 콘솔은 cp949 라, 요약 문자열에 em dash 같은
+# 문자가 하나만 있어도 UnicodeEncodeError 로 테스트 러너 자체가 죽는다.
+# 필수 명령이 콘솔 인코딩 때문에 실패하면 안 되므로 출력 스트림을 고정한다.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, 'reconfigure'):
+        _stream.reconfigure(encoding='utf-8', errors='replace')
+
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 TESTS_DIR = PLUGIN_ROOT / 'tests'
 

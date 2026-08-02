@@ -34,6 +34,14 @@ EXIT_BLOCK = 2
 # 검색 도구 (범위 명시 강제)
 SEARCH_TOOLS = ('grep', 'glob', 'search', 'find')
 
+# 셸 도구 — 명령 문자열 판정은 guard_bash.py 가 담당하므로 여기서는 넘긴다
+#
+# **이 목록에 이름을 추가하면 hooks.json 의 guard_bash matcher 에도 추가해야 한다.**
+# 넘기기만 하고 받는 쪽이 없으면 그 도구는 두 hook 을 모두 통과한다.
+# 실제로 PowerShell 이 이 상태였다 (guard_file_access 는 넘기는데
+# hooks.json 은 Bash 만 잡고 있었다). test_hooks.py 가 둘의 일치를 검사한다.
+SHELL_TOOL_NAMES = frozenset({'bash', 'shell', 'powershell'})
+
 # 읽기 전용이 확실한 도구 — **정확히 일치**해야 한다
 #
 # 쓰기 도구를 나열하는 대신 읽기 도구를 나열하고 나머지를 쓰기로 본다.
@@ -76,28 +84,28 @@ MAX_PATH_LENGTH = 4096
 MAX_RECURSION_DEPTH = 8
 
 GUIDANCE = """
-  임상 데이터는 Opus 가 직접 읽을 수 없습니다.
+  The orchestrating model cannot read clinical data directly.
 
-  읽을 수 있는 위치
+  Readable locations
     docs/            Protocol, SAP, DMP, Data Dictionary
-    programs/        SAS / Python / R 코드
-    output/tables/   집계 표
-    output/figures/  그림
+    programs/        SAS / Python / R source code
+    output/tables/   aggregate tables
+    output/figures/  figures
     logs/runs/*/manifest.json, assertions.json
 
-  읽을 수 없는 위치
-    data/                 원본 및 파생 데이터셋
-    output/listings/      피험자 단위 목록
+  Non-readable locations
+    data/                 source and derived datasets
+    output/listings/      subject-level listings
     logs/runs/*/stdout.txt, stderr.txt, execution.log, execution.lst
-                          프로그램 출력에 피험자 데이터가 포함될 수 있음
+                          program output may contain subject data
 
-  데이터가 필요한 작업은 이렇게 하십시오.
-    1. 로컬 LLM(MCP: local-coder)에게 SAS/Python/R 코드를 작성시킨다
-    2. runner 로 실행한다
+  For work that needs the data, do this instead:
+    1. Have the local LLM (MCP: local-coder) write the SAS/Python/R code
+    2. Execute it through a runner
          python scripts/run_sas.py    --program programs/sas/t_dm.sas
          python scripts/run_python.py --program programs/python/t_ae.py
          python scripts/run_r.py      --program programs/r/f_km.R
-    3. assertion 결과와 집계 산출물을 확인한다
+    3. Review the assertion results and the aggregate outputs
          logs/runs/{run_id}/assertions.json
          output/tables/, output/figures/
 """
@@ -249,7 +257,7 @@ def check_search_scope(tool_input, study_root, config, base_dir):
 
     scope = tool_input.get('path') or tool_input.get('directory') or tool_input.get('cwd')
     reason = classify_search_scope(scope, study_root, config, base_dir)
-    return (reason, scope or '(범위 미지정)') if reason else (None, None)
+    return (reason, scope or '(no scope given)') if reason else (None, None)
 
 
 def record_block(study_root, tool_name, target, reason):
@@ -291,10 +299,10 @@ def block(study_root, tool_name, target, reason):
     """
     record_block(study_root, tool_name, target, reason)
     print(
-        f"[gxpllm-guard] 접근 차단\n"
-        f"  도구: {tool_name}\n"
-        f"  대상: {target}\n"
-        f"  사유: {reason}\n"
+        f"[gxpllm-guard] Access blocked\n"
+        f"  tool:   {tool_name}\n"
+        f"  target: {target}\n"
+        f"  reason: {reason}\n"
         f"{GUIDANCE}",
         file=sys.stderr,
     )
@@ -307,7 +315,7 @@ def main():
     try:
         payload = read_hook_payload()
     except Exception as exc:
-        print(f"[gxpllm-guard] hook 입력을 해석할 수 없어 차단합니다: {exc}", file=sys.stderr)
+        print(f"[gxpllm-guard] Blocked: cannot parse hook input: {exc}", file=sys.stderr)
         sys.exit(EXIT_BLOCK)
 
     # --- 판정 --------------------------------------------------------------
@@ -318,8 +326,8 @@ def main():
         tool_input = payload.get('tool_input') or {}
         cwd = payload.get('cwd') or os.getcwd()
 
-        # Bash 는 guard_bash.py 가 담당한다
-        if str(tool_name).lower() in ('bash', 'shell', 'powershell'):
+        # 셸 도구는 guard_bash.py 가 담당한다
+        if str(tool_name).lower() in SHELL_TOOL_NAMES:
             sys.exit(EXIT_ALLOW)
 
         study_root, config = find_study_root(cwd)
@@ -348,7 +356,7 @@ def main():
     except Exception as exc:
         # fail-closed: 판정 불가 시 차단
         print(
-            f"[gxpllm-guard] 내부 오류로 차단합니다 (fail-closed): "
+            f"[gxpllm-guard] Blocked by internal error (fail-closed): "
             f"{type(exc).__name__}: {exc}",
             file=sys.stderr,
         )
