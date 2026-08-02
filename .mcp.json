@@ -4,9 +4,11 @@
       "command": "python",
       "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/local_coder_server.py"],
       "env": {
-        "GXPLLM_ENDPOINT": "http://dgx-spark.internal:8001/v1",
-        "GXPLLM_MODEL": "Qwen3.6-35B-A3B",
-        "PYTHONIOENCODING": "utf-8"
+        "GXPLLM_ENDPOINT": "${GXPLLM_ENDPOINT:-http://dgx-spark.internal:8001/v1}",
+        "GXPLLM_MODEL": "${GXPLLM_MODEL:-Qwen3.6-35B-A3B}",
+        "GXPLLM_API_KEY": "${GXPLLM_API_KEY}",
+        "GXPLLM_MAX_TOKENS": "${GXPLLM_MAX_TOKENS:-32768}",
+        "PYTHONIOENCODING": "${GXPLLM_ENCODING:-utf-8}"
       }
     }
   }

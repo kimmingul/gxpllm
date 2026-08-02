@@ -72,6 +72,10 @@ Medical Writer가 문서를 쓰던 자리에 Claude가 초안을 냅니다.
 /plugin marketplace add https://github.com/kimmingul/gxpllm
 /plugin install gxpllm
 
+# 로컬 LLM 서버 지정 (환경변수로 설정합니다. .mcp.json 은 고치지 마십시오)
+setx GXPLLM_ENDPOINT "http://dgx-spark.internal:8001/v1"
+setx GXPLLM_MODEL    "Qwen3.6-35B-A3B"
+
 # 검증 (SAS·R·DGX Spark 없이도 전부 통과해야 합니다)
 python tests/run_all.py
 

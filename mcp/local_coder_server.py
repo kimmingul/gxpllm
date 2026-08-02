@@ -38,8 +38,38 @@ DEFAULT_MODEL = 'Qwen3.6-35B-A3B-NVFP4'
 DEFAULT_TIMEOUT_SEC = 300
 DEFAULT_TEMPERATURE = 0.2
 
-ENDPOINT = os.environ.get('GXPLLM_ENDPOINT', DEFAULT_ENDPOINT)
-MODEL = os.environ.get('GXPLLM_MODEL', DEFAULT_MODEL)
+
+def read_env(name, default=''):
+    """
+    환경변수를 읽되 확장되지 않은 자리표시자를 빈 값으로 본다
+
+    `.mcp.json` 의 `${VAR}` 는 변수가 없고 기본값도 없으면
+    **확장되지 않은 문자열 그대로** 전달된다.
+    이것을 값으로 쓰면 API key 자리에 '${GXPLLM_API_KEY}' 가 들어가
+    인증이 조용히 실패한다.
+
+    Args:
+        name: 환경변수 이름
+        default: 값이 없을 때 쓸 기본값
+
+    Returns:
+        해석된 문자열
+    """
+    value = (os.environ.get(name) or '').strip()
+    if value.startswith('${') and value.endswith('}'):
+        return default
+    return value or default
+
+
+ENDPOINT = read_env('GXPLLM_ENDPOINT', DEFAULT_ENDPOINT)
+MODEL = read_env('GXPLLM_MODEL', DEFAULT_MODEL)
+
+# 로컬 LLM 서버가 인증을 요구할 때만 쓴다 (vLLM 의 --api-key 등).
+# 비어 있으면 Authorization 헤더를 보내지 않는다.
+#
+# **이 값은 오류 메시지에 넣지 않는다.** MCP 오류는 오케스트레이터에게
+# 그대로 전달되고 대화 기록에 남는다.
+API_KEY = read_env('GXPLLM_API_KEY')
 
 # 정상 완료로 인정하는 finish_reason — **allowlist 여야 한다**
 #
@@ -58,7 +88,7 @@ SUCCESS_FINISH_REASONS = frozenset({'stop'})
 FALLBACK_MAX_TOKENS = 32768
 
 try:
-    DEFAULT_MAX_TOKENS = int(os.environ.get('GXPLLM_MAX_TOKENS') or FALLBACK_MAX_TOKENS)
+    DEFAULT_MAX_TOKENS = int(read_env('GXPLLM_MAX_TOKENS', FALLBACK_MAX_TOKENS))
 except ValueError:
     raise SystemExit(
         f"GXPLLM_MAX_TOKENS 를 숫자로 해석할 수 없습니다: "
@@ -222,10 +252,14 @@ def call_llm(messages, max_tokens=DEFAULT_MAX_TOKENS, temperature=DEFAULT_TEMPER
     if response_format:
         payload['response_format'] = response_format
 
+    headers = {'Content-Type': 'application/json'}
+    if API_KEY:
+        headers['Authorization'] = f'Bearer {API_KEY}'
+
     request = urllib.request.Request(
         f"{ENDPOINT.rstrip('/')}/chat/completions",
         data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
-        headers={'Content-Type': 'application/json'},
+        headers=headers,
         method='POST',
     )
 
@@ -233,9 +267,14 @@ def call_llm(messages, max_tokens=DEFAULT_MAX_TOKENS, temperature=DEFAULT_TEMPER
         with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SEC) as response:
             body = json.loads(response.read().decode('utf-8'))
     except urllib.error.URLError as exc:
+        # 인증 정보는 메시지에 넣지 않는다. 설정 여부만 알린다.
+        auth_hint = (
+            'GXPLLM_API_KEY 설정됨' if API_KEY else 'GXPLLM_API_KEY 없음'
+        )
         raise RuntimeError(
-            f"로컬 LLM 호출 실패 ({ENDPOINT}): {exc}. "
-            f"DGX Spark 의 vLLM 서비스가 기동 중인지 확인하십시오."
+            f"로컬 LLM 호출 실패 ({ENDPOINT}, {auth_hint}): {exc}. "
+            f"서버가 기동 중인지, 인증이 필요한 서버라면 "
+            f"GXPLLM_API_KEY 가 맞는지 확인하십시오."
         ) from exc
     except (ValueError, KeyError) as exc:
         raise RuntimeError(f"로컬 LLM 응답을 해석할 수 없습니다: {exc}") from exc

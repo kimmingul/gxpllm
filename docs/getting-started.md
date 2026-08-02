@@ -35,20 +35,42 @@
 
 ### LLM endpoint 설정
 
-`.mcp.json` 의 `GXPLLM_ENDPOINT` 를 사내 DGX Spark 주소로 바꿉니다.
+**`.mcp.json` 을 고치지 마십시오. 환경변수로 설정합니다.**
 
-```json
-{
-  "mcpServers": {
-    "local-coder": {
-      "env": {
-        "GXPLLM_ENDPOINT": "http://dgx-spark.internal:8001/v1",
-        "GXPLLM_MODEL": "Qwen3.6-35B-A3B-NVFP4"
-      }
-    }
-  }
-}
+`.mcp.json` 은 `${VAR:-기본값}` 형태로 되어 있어서, 환경변수를 설정하면
+그 값이 이깁니다. 저장소 파일을 고치면 `git pull` 마다 충돌하고,
+실수로 사내 주소를 커밋하게 됩니다.
+
+| 환경변수 | 기본값 | 설명 |
+|---|---|---|
+| `GXPLLM_ENDPOINT` | `http://dgx-spark.internal:8001/v1` | OpenAI 호환 endpoint |
+| `GXPLLM_MODEL` | `Qwen3.6-35B-A3B` | 서빙 중인 모델 이름 |
+| `GXPLLM_API_KEY` | (없음) | 서버가 인증을 요구할 때만 |
+| `GXPLLM_MAX_TOKENS` | `32768` | 응답 토큰 상한 |
+| `GXPLLM_ENCODING` | `utf-8` | MCP 서버 입출력 인코딩 |
+
+Windows (PowerShell, 사용자 영구 설정):
+
+```powershell
+setx GXPLLM_ENDPOINT "http://192.168.0.10:8001/v1"
+setx GXPLLM_MODEL    "Qwen3.6-35B-A3B"
 ```
+
+Linux / macOS (`~/.bashrc` 또는 `~/.zshrc`):
+
+```bash
+export GXPLLM_ENDPOINT="http://dgx-spark.internal:8001/v1"
+export GXPLLM_MODEL="Qwen3.6-35B-A3B"
+```
+
+설정 후 Claude Code 를 다시 시작합니다. `claude mcp list` 로 확인하십시오.
+
+**`GXPLLM_MAX_TOKENS` 를 낮추지 마십시오.** 추론 모델은 추론과 본문이
+같은 예산을 나눠 씁니다. 실측에서 인구통계 요약표 하나에 추론이 8,000 토큰을
+넘게 썼습니다. 부족하면 응답이 잘리고, 서버는 이를 오류로 거부합니다.
+
+**API key 는 저장소에 두지 마십시오.** `.mcp.json` 의 `GXPLLM_API_KEY` 에는
+기본값이 없습니다. 값이 필요하면 환경변수로만 주십시오.
 
 ### DGX Spark 쪽 vLLM 기동
 

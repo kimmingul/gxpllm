@@ -169,11 +169,37 @@ class Report:
 # 설정 해석
 # ============================================================================
 
+def expand_placeholder(value, name):
+    """
+    .mcp.json 의 ${VAR} / ${VAR:-default} 를 해석한다
+
+    Claude Code 가 실제 실행 시 하는 확장을 테스트에서도 재현한다.
+    변수가 없고 기본값도 없으면 None 을 돌려준다.
+
+    Args:
+        value: .mcp.json 에 적힌 원본 문자열
+        name: 참고용 키 이름 (진단 메시지용)
+
+    Returns:
+        해석된 문자열. 값을 정할 수 없으면 None
+    """
+    if not isinstance(value, str) or not value.startswith('${'):
+        return value or None
+
+    body = value[2:-1] if value.endswith('}') else value[2:]
+    if ':-' in body:
+        var_name, default = body.split(':-', 1)
+    else:
+        var_name, default = body, ''
+
+    return (os.environ.get(var_name.strip()) or default).strip() or None
+
+
 def resolve_target(endpoint_arg, model_arg):
     """
     검증 대상 endpoint 와 모델을 정한다
 
-    우선순위: 명령행 인자 > 환경변수 > .mcp.json
+    우선순위: 명령행 인자 > 환경변수 > .mcp.json (${VAR} 확장 포함)
 
     Args:
         endpoint_arg: --endpoint 값 또는 None
@@ -202,11 +228,29 @@ def resolve_target(endpoint_arg, model_arg):
         except (OSError, ValueError):
             env = {}
         if env:
-            source = '.mcp.json'
-            endpoint = endpoint or env.get('GXPLLM_ENDPOINT')
-            model = model or env.get('GXPLLM_MODEL')
+            source = '.mcp.json (${VAR} 확장)'
+            endpoint = endpoint or expand_placeholder(
+                env.get('GXPLLM_ENDPOINT'), 'GXPLLM_ENDPOINT')
+            model = model or expand_placeholder(
+                env.get('GXPLLM_MODEL'), 'GXPLLM_MODEL')
 
     return endpoint, model, source
+
+
+def resolve_api_key():
+    """
+    인증 키를 정한다
+
+    Returns:
+        API key 문자열. 없으면 빈 문자열
+    """
+    value = (os.environ.get('GXPLLM_API_KEY') or '').strip()
+    if value.startswith('${'):
+        return ''
+    return value
+
+
+API_KEY = resolve_api_key()
 
 
 def load_server_module(endpoint, model):
@@ -254,6 +298,7 @@ def call_tool(tool_name, arguments, endpoint, model, timeout=GENERATE_TIMEOUT_SE
     env['PYTHONIOENCODING'] = 'utf-8'
     env['GXPLLM_ENDPOINT'] = endpoint
     env['GXPLLM_MODEL'] = model
+    env['GXPLLM_API_KEY'] = API_KEY
 
     requests = [
         {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}},
@@ -311,13 +356,17 @@ def raw_chat(endpoint, model, messages, max_tokens, temperature=0.2):
     Raises:
         RuntimeError: 호출 실패 시
     """
+    headers = {'Content-Type': 'application/json'}
+    if API_KEY:
+        headers['Authorization'] = f'Bearer {API_KEY}'
+
     request = urllib.request.Request(
         f"{endpoint.rstrip('/')}/chat/completions",
         data=json.dumps({
             'model': model, 'messages': messages,
             'max_tokens': max_tokens, 'temperature': temperature,
         }, ensure_ascii=False).encode('utf-8'),
-        headers={'Content-Type': 'application/json'},
+        headers=headers,
         method='POST',
     )
     try:
@@ -358,9 +407,13 @@ def check_connection(endpoint, model, report):
     """
     print(f"\n[1/6] 서버 연결...")
 
+    models_request = urllib.request.Request(f"{endpoint.rstrip('/')}/models")
+    if API_KEY:
+        models_request.add_header('Authorization', f'Bearer {API_KEY}')
+
     try:
         started = time.time()
-        with urllib.request.urlopen(f"{endpoint.rstrip('/')}/models",
+        with urllib.request.urlopen(models_request,
                                     timeout=CONNECT_TIMEOUT_SEC) as response:
             body = json.loads(response.read().decode('utf-8'))
         elapsed = time.time() - started
@@ -646,6 +699,7 @@ def main():
     print(f"\n  설정 출처 : {source}")
     print(f"  endpoint  : {endpoint}")
     print(f"  모델      : {model}")
+    print(f"  인증      : {'GXPLLM_API_KEY 설정됨' if API_KEY else '없음'}")
 
     report = Report()
     started = time.time()

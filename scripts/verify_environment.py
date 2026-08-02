@@ -496,6 +496,7 @@ def check_llm(study_root, result, endpoint_override=None, model_override=None):
     config = load_config(study_root, required=False)
     endpoint = endpoint_override or config.get('llm_endpoint')
     model = model_override or config.get('llm_model')
+    api_key = (os.environ.get('GXPLLM_API_KEY') or '').strip()
 
     if not endpoint:
         result.add('vLLM', 'endpoint 설정', False,
@@ -506,8 +507,12 @@ def check_llm(study_root, result, endpoint_override=None, model_override=None):
 
     # --- 모델 목록 조회 ------------------------------------------------------
     models_url = f"{endpoint.rstrip('/')}/models"
+    models_request = urllib.request.Request(models_url)
+    if api_key:
+        models_request.add_header('Authorization', f'Bearer {api_key}')
+
     try:
-        with urllib.request.urlopen(models_url, timeout=LLM_TIMEOUT_SEC) as response:
+        with urllib.request.urlopen(models_request, timeout=LLM_TIMEOUT_SEC) as response:
             body = json.loads(response.read().decode('utf-8'))
         served = [m.get('id') for m in body.get('data', [])]
         result.add('vLLM', 'endpoint 연결', True, f"모델 {len(served):,}개")
@@ -525,6 +530,8 @@ def check_llm(study_root, result, endpoint_override=None, model_override=None):
     env['GXPLLM_ENDPOINT'] = endpoint
     if model:
         env['GXPLLM_MODEL'] = model
+    if api_key:
+        env['GXPLLM_API_KEY'] = api_key
 
     requests = [
         {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}},

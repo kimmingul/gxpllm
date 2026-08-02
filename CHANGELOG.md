@@ -25,6 +25,29 @@
   `exploratory` 는 `--allow-no-assertions` 로만 열 수 있으며 그 사실이
   manifest(`assertions.no_assertions_allowed`)와 감사 로그에 남습니다.
 
+### 변경 — 설정을 환경변수로 분리
+
+`.mcp.json` 이 `${VAR:-기본값}` 확장을 쓰도록 바꿨습니다. 저장소에는 안전한
+기본값만 커밋되고, 각자 자기 서버는 환경변수로 지정합니다.
+**`.mcp.json` 을 직접 고칠 필요가 없습니다** — 고치면 `git pull` 마다
+충돌하고 사내 주소를 실수로 커밋하게 됩니다.
+
+| 환경변수 | 기본값 |
+|---|---|
+| `GXPLLM_ENDPOINT` | `http://dgx-spark.internal:8001/v1` |
+| `GXPLLM_MODEL` | `Qwen3.6-35B-A3B` |
+| `GXPLLM_API_KEY` | (기본값 없음 — 비밀값이므로) |
+| `GXPLLM_MAX_TOKENS` | `32768` |
+| `GXPLLM_ENCODING` | `utf-8` |
+
+- 서버가 인증을 요구하면 `GXPLLM_API_KEY` 로 `Authorization: Bearer` 를
+  보냅니다. **키는 오류 메시지에 넣지 않습니다** — MCP 오류는 오케스트레이터
+  대화 기록에 그대로 남기 때문에, 설정 여부만 알립니다.
+- 확장되지 않은 `${VAR}` 자리표시자를 빈 값으로 처리합니다.
+  Claude Code 는 변수가 없고 기본값도 없으면 `${VAR}` 를 **문자열 그대로**
+  전달하므로, 그대로 쓰면 `Authorization: Bearer ${GXPLLM_API_KEY}` 가 나가
+  인증이 조용히 실패합니다.
+
 ### 추가
 
 - `GXPLLM_MAX_TOKENS` 환경변수. 기본값을 8,192 → 32,768 로 올렸습니다.
