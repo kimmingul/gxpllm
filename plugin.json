@@ -1,0 +1,27 @@
+{
+  "name": "gxpllm",
+  "version": "0.1.0",
+  "description": "gxpllm — clinical trial data analysis with an enforced data boundary. A local LLM writes SAS/Python/R, runners execute them with a tamper-evident audit trail, and the orchestrating model never sees patient data.",
+  "author": {
+    "name": "gxpllm contributors"
+  },
+  "repository": "https://github.com/kimmingul/gxpllm",
+  "license": "MIT",
+  "keywords": [
+    "clinical-trials",
+    "sas",
+    "cdisc",
+    "adam",
+    "sdtm",
+    "gxp",
+    "audit-trail",
+    "local-llm",
+    "biostatistics",
+    "gxpllm"
+  ],
+  "skills": [
+    "./skills/clinical-conventions/",
+    "./skills/sas-programming/",
+    "./skills/python-r-programming/"
+  ]
+}

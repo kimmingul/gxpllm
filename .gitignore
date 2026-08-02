@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Build / logs
+dist/
+*.log
+*.bak
+
+# ---------------------------------------------------------------------------
+# 임상 데이터는 절대 커밋되면 안 된다
+# study 디렉터리는 이 저장소 밖에 두는 것이 원칙이지만,
+# 실수로 안에 만들어도 커밋되지 않도록 이중으로 막는다
+# ---------------------------------------------------------------------------
+data/
+**/data/raw/
+**/data/derived/
+**/output/listings/
+**/logs/runs/
+**/audit/audit.jsonl
+.gxpllm/
+*.sas7bdat
+*.sas7bndx
+*.xpt
+*.sav
+*.dta
+
+# 검증 산출물 (재생성 가능)
+**/validation/environment_verification_*.json
+**/validation/codegen_benchmark_*.json
+benchmark/cases.yaml
+
+# 로컬 세션 노이즈
+.omc/
+.serena/
+.remember/
+.scratch/
+.xllm/
+.vscode/
+.idea/

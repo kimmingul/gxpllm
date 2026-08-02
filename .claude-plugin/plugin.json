@@ -1,0 +1,27 @@
+{
+  "name": "gxpllm",
+  "version": "0.1.0",
+  "description": "Clinical trial data analysis for Claude Code: a local LLM writes SAS/Python/R, runners execute them with a tamper-evident audit trail, and Claude never sees patient data. The boundary is enforced by hooks, not prompts.",
+  "author": {
+    "name": "gxpllm contributors"
+  },
+  "repository": "https://github.com/kimmingul/gxpllm",
+  "homepage": "https://github.com/kimmingul/gxpllm",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "clinical-trials",
+    "sas",
+    "cdisc",
+    "gxp",
+    "audit-trail",
+    "local-llm",
+    "biostatistics",
+    "gxpllm"
+  ],
+  "skills": [
+    "./skills/clinical-conventions/",
+    "./skills/sas-programming/",
+    "./skills/python-r-programming/"
+  ]
+}

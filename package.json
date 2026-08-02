@@ -1,0 +1,41 @@
+{
+  "name": "gxpllm",
+  "version": "0.1.0",
+  "description": "gxpllm — clinical trial data analysis for agentic coding hosts: a local LLM writes SAS/Python/R, runners execute them with a tamper-evident audit trail, and the orchestrating model never sees patient data.",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "test": "python tests/run_all.py",
+    "check": "python tests/run_all.py",
+    "hooks": "python tests/test_hooks.py",
+    "audit": "python tests/test_audit.py",
+    "llm": "python tests/test_llm_path.py",
+    "init": "python scripts/init_study.py",
+    "verify": "python scripts/verify_environment.py",
+    "verify-audit": "python scripts/verify_audit.py",
+    "benchmark": "python scripts/benchmark_codegen.py",
+    "ci": "python tests/run_all.py"
+  },
+  "keywords": [
+    "clinical-trials",
+    "sas",
+    "cdisc",
+    "adam",
+    "sdtm",
+    "gxp",
+    "audit-trail",
+    "claude-code",
+    "local-llm",
+    "biostatistics",
+    "gxpllm"
+  ],
+  "author": "gxpllm contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kimmingul/gxpllm"
+  },
+  "homepage": "https://github.com/kimmingul/gxpllm",
+  "engines": {
+    "python": ">=3.10"
+  }
+}

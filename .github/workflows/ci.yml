@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.10', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # gxpllm uses only the standard library.
+      # chardet is optional (SAS log encoding detection falls back to a candidate list).
+      - name: Install optional dependencies
+        run: python -m pip install --upgrade pip chardet pyyaml
+
+      - name: Full verification
+        env:
+          # Keep the audit HMAC key out of the workspace so tests do not
+          # depend on a developer's home directory.
+          GXPLLM_AUDIT_KEY_DIR: ${{ runner.temp }}
+        run: python tests/run_all.py
+
+  boundary:
+    # The boundary suite is the one that must never regress.
+    # It runs separately so a failure is unmistakable in the checks list.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Boundary enforcement (bypass attempts + legitimate work)
+        run: python tests/test_hooks.py
+
+      - name: False positives (blocked legitimate work is a security issue)
+        run: python tests/test_false_positives.py
+
+      - name: Audit chain tamper detection
+        env:
+          GXPLLM_AUDIT_KEY_DIR: ${{ runner.temp }}
+        run: python tests/test_audit.py
