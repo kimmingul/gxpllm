@@ -575,6 +575,11 @@ def main():
         sys.exit(2)
 
     study_root = Path(config['root'])
+
+    # CLI > GXPLLM_ENDPOINT/GXPLLM_MODEL > config (_common 에 규칙이 있다)
+    endpoint = _common.resolve_llm_endpoint(config, args.endpoint)
+    model = _common.resolve_llm_model(config, args.model)
+
     data = load_cases(args.cases)
     cases = data.get('cases', [])
     languages = [lang.strip() for lang in args.languages.split(',') if lang.strip()]
@@ -605,7 +610,7 @@ def main():
                   f"({case.get('difficulty', '?')})...")
 
             result = run_case(case, language, plugin_root, study_root,
-                              args.max_revisions, args.endpoint, args.model)
+                              args.max_revisions, endpoint, model)
             results.append(result)
 
             status = 'PASS' if result['passed'] else 'FAIL'
@@ -623,8 +628,8 @@ def main():
     payload = {
         'measured_at': now_iso(),
         'study_id': config.get('study_id'),
-        'model': args.model or config.get('llm_model'),
-        'endpoint': args.endpoint or config.get('llm_endpoint'),
+        'model': model,
+        'endpoint': endpoint,
         'max_revisions': args.max_revisions,
         'summary': summary,
         'results': results,

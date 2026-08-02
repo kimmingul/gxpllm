@@ -15,6 +15,18 @@ runner 공통 모듈
 import sys
 from pathlib import Path
 
+# 출력 스트림을 utf-8 로 고정한다
+#
+# Windows 한국어 환경의 기본 콘솔은 cp949 다. 진행 메시지에 em dash 같은
+# 문자가 하나만 있어도 UnicodeEncodeError 로 runner 가 죽는다.
+# 실제로 verify_environment.py 가 endpoint 연결에 성공한 직후
+# 그 결과를 **출력하다가** 죽었다. 검증 자체는 통과했는데 실패로 보였다.
+#
+# 모든 runner 가 이 모듈을 import 하므로 여기서 한 번만 처리한다.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, 'reconfigure'):
+        _stream.reconfigure(encoding='utf-8', errors='replace')
+
 # plugin 루트를 sys.path 에 추가
 _PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 if str(_PLUGIN_ROOT) not in sys.path:
@@ -92,6 +104,55 @@ OUTPUT_CLASSIFICATION = {
     'output/figures':  'figure',
     'output/listings': 'listing',
 }
+
+
+# ============================================================================
+# LLM 설정 해석
+# ============================================================================
+
+def resolve_llm_endpoint(config, override=None):
+    """
+    LLM endpoint 를 우선순위대로 결정한다
+
+    우선순위: CLI --endpoint > GXPLLM_ENDPOINT > .gxpllm/config.json
+
+    **환경변수가 config 보다 앞선다.** `mcp/local_coder_server.py` 는 환경변수만
+    보고, `docs/getting-started.md` 도 환경변수로 설정하라고 안내한다.
+    그런데 `init_study.py` 는 config 에 기본 endpoint 를 박아 넣는다.
+    검증 도구가 config 를 먼저 보면, 문서대로 환경변수를 설정한 사용자가
+    엉뚱한 주소를 검증하고 실패를 본다. 실제로 그랬다.
+
+    study 별로 다른 서버를 쓰는 경우는 config 가 마지막 순위로 남아 있다.
+
+    Args:
+        config: study 설정 딕셔너리
+        override: CLI 로 받은 endpoint (없으면 None)
+
+    Returns:
+        endpoint 문자열. 어디에도 없으면 None
+    """
+    return (override
+            or (os.environ.get('GXPLLM_ENDPOINT') or '').strip() or None
+            or (config or {}).get('llm_endpoint'))
+
+
+def resolve_llm_model(config, override=None):
+    """
+    LLM 모델명을 우선순위대로 결정한다
+
+    우선순위는 resolve_llm_endpoint 와 같다. 둘이 어긋나면
+    한쪽 서버에 없는 모델명을 보내게 되므로 규칙을 맞춘다.
+
+    Args:
+        config: study 설정 딕셔너리
+        override: CLI 로 받은 모델명 (없으면 None)
+
+    Returns:
+        모델명 문자열. 어디에도 없으면 None
+    """
+    return (override
+            or (os.environ.get('GXPLLM_MODEL') or '').strip() or None
+            or (config or {}).get('llm_model'))
 
 
 # ============================================================================

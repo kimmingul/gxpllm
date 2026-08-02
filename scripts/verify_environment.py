@@ -20,7 +20,7 @@
     python scripts/verify_environment.py --study . --only sas
 """
 
-import _common  # noqa: F401  (sys.path 설정)
+import _common  # sys.path 설정 + LLM 설정 해석
 
 import argparse
 import json
@@ -494,13 +494,14 @@ def check_llm(study_root, result, endpoint_override=None, model_override=None):
     print(f"\n[vLLM] DGX Spark endpoint 검증...")
 
     config = load_config(study_root, required=False)
-    endpoint = endpoint_override or config.get('llm_endpoint')
-    model = model_override or config.get('llm_model')
+    endpoint = _common.resolve_llm_endpoint(config, endpoint_override)
+    model = _common.resolve_llm_model(config, model_override)
     api_key = (os.environ.get('GXPLLM_API_KEY') or '').strip()
 
     if not endpoint:
         result.add('vLLM', 'endpoint 설정', False,
-                   '.gxpllm/config.json 에 llm_endpoint 없음', skipped=True)
+                   'GXPLLM_ENDPOINT 환경변수도 .gxpllm/config.json 의 '
+                   'llm_endpoint 도 없음', skipped=True)
         return
 
     result.add('vLLM', 'endpoint 설정', True, endpoint)
