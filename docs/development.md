@@ -2201,16 +2201,16 @@ gxpllm/
 
 ## 11. 개발 순서 및 완료 상태
 
-### 11.0 완료 상태 요약 (2026-08-02)
+### 11.0 완료 상태 요약 (2026-08-03)
 
 | 단계 | 산출물 | 상태 | 검증 |
 |---|---|---|---|
-| **1** | `hooks/guard_file_access.py`, `guard_bash.py`, `hooks.json`, `snapshot_env.py` | **완료** | `test_hooks.py` 300건 |
-| **2** | `gxpllm/core.py`, `scripts/_common.py`, `verify_audit.py` | **완료** | `test_audit.py` 9건 |
+| **1** | `hooks/guard_file_access.py`, `guard_bash.py`, `hooks.json`, `snapshot_env.py` | **완료** | `test_hooks.py` 329건 |
+| **2** | `gxpllm/core.py`, `scripts/_common.py`, `verify_audit.py` | **완료** | `test_audit.py` 9건 + **실환경 체인 검증** (§12.4) |
 | **3** | `scripts/run_sas.py` + 로그 스캔 19종 | **코드 완료 / 실행 미검증** | SAS 미설치 (§11.2) |
-| **4** | `scripts/run_python.py`, `run_r.py` | **Python 검증 / R 미검증** | R 미설치 (§11.2) |
+| **4** | `scripts/run_python.py`, `run_r.py` | **Python 실환경 검증 11/11 / R 미검증** | R 미설치 (§11.2) |
 | **5** | `macros/gxpllm_assert.sas`, `gxpllm_assert.py`, `gxpllm_assert.R` | **완료** | `test_assert_api.py` — 3개 언어 API 일치 |
-| **6** | `mcp/local_coder_server.py`, `/write-program` | **완료** | `test_mcp.py` + `test_llm_path.py` (모의 서버로 HTTP 왕복까지) |
+| **6** | `mcp/local_coder_server.py`, `/write-program` | **완료** | `test_mcp.py` + `test_llm_path.py` + **실서버 왕복 5/5** (§12.4) |
 | **7** | `/build-dictionary` | **완료** | command 정의 및 구조 검증 |
 | **8** | 나머지 command 9종, skill 3종 | **완료** | `run_all.py` 구조 검증 |
 
@@ -2232,7 +2232,11 @@ gxpllm/
 |---|---|---|
 | SAS 9.4 실행 | 개발 PC 에 SAS 9.4 미설치 | `verify_environment.py --only sas` 로 실제 PC 에서 확인 |
 | R 실행 | R 미설치 (`C:\Program Files\R` 디렉터리만 존재) | `verify_environment.py --only r` |
-| DGX Spark vLLM | endpoint 없음 | **모의 서버로 HTTP 왕복까지 검증 완료**. 실제 endpoint 는 `--only llm` |
+| ~~vLLM~~ | ~~endpoint 없음~~ | **2026-08-03 실서버로 검증 완료 (5/5)**. §12.4 참조 |
+| ~~Python runner~~ | — | **2026-08-03 실환경 검증 완료 (11/11)**. §12.4 참조 |
+
+SAS 와 R 은 여전히 남아 있다. 두 소프트웨어가 설치된 PC 를 확보하기 전에는
+§11.1 의 언어 비교를 할 수 없다.
 
 > **주의**: 개발 PC 에서 `D:\Software\SAS 9.1.3 Portable\sas.exe` 가 발견됐으나
 > 검증에 사용하지 않았다. `info.txt` 에 따르면 토렌트로 배포된 크랙 버전이며
@@ -2302,6 +2306,29 @@ SAS 매크로, PROC 문법, ADaM 파생 관례는 학습 데이터가 훨씬 적
 
 **이 측정 결과가 §8과 §9의 설계를 바꾼다. 개발 전에 수행한다.**
 
+#### 참고: 호출 지연 실측 (2026-08-03)
+
+품질 측정은 아직이지만, **응답 지연**은 로컬 vLLM(Qwen3.6-35B-A3B)에서 측정했다.
+
+| 항목 | 값 |
+|---|---|
+| 코드 생성 호출 1회 | 약 160초 |
+| 생성 + 수정 1회 합계 | 325초 |
+| 생성된 코드 길이 | 89행 |
+
+**호출당 2~3분이 이 서버의 정상 범위다.** `GXPLLM_TIMEOUT_SEC` 기본값 300 은
+단일 호출에는 충분하고, 올릴 근거는 아직 없다. 다만 `structure_text` 는
+단일 호출로 300초를 넘겨 실패한 적이 있다.
+
+이 지연은 설계 판단에 직접 영향을 준다 — 케이스 10건 × 3개 언어를 측정하면
+생성만으로 **1.5시간 이상**이 걸린다. §11.1 측정 일정을 잡을 때 반영할 것.
+
+**품질은 측정되지 않았다.** 위 수치는 1케이스 Python 단독 실행이고,
+입력 데이터·`expected` 결과·실제 `human_minutes` 가 모두 없었다.
+성공률 0% 는 코드 품질이 아니라 입력 데이터 부재 때문일 가능성이 높지만
+**확인하지 못했다** (경계 정책상 `execution.log` 를 읽을 수 없다).
+이 수치를 IQ/OQ 증적으로 쓰면 안 된다.
+
 ---
 
 ## 12. 알려진 한계 (CSV 문서에 반드시 기재)
@@ -2358,20 +2385,49 @@ SAS 매크로, PROC 문법, ADaM 파생 관례는 학습 데이터가 훨씬 적
 python scripts/verify_environment.py --study D:\clinical\DEMO-001
 ```
 
-| # | 항목 | 도구가 확인하는 것 |
-|---|---|---|
-| 1 | **SAS 9.4 runner 실동작** | 배치 실행, `-noterminal`, WORK 분리, `.lst` 생성 |
-| 2 | **한국어 Windows SAS 로그 인코딩** | CP949 자동 감지 여부 (manifest 의 `log_encoding`) |
-| 3 | **SAS 로그 스캔 규칙** | 의도적 다대다 MERGE 를 넣고 `MERGE_REPEAT_BY` 탐지 확인 |
-| 4 | **SAS assertion 매크로** | `assertions.jsonl` 기록, 의도적 실패가 `FAIL` 로 남는지 |
-| 5 | **R runner 실동작** | `Rscript --vanilla`, wrapper 주입, `sessionInfo` |
-| 6 | **R assertion 함수** | Python/SAS 와 동일한 JSON 형식 |
-| 7 | **DGX Spark vLLM 연동** | endpoint 연결, 모델 서빙 확인, MCP 경유 코드 생성 |
-| 8 | **3개 언어 형식 일치** | 같은 필수 키, 같은 `language` 필드, 공통 rule 이름 |
+| # | 항목 | 도구가 확인하는 것 | 상태 |
+|---|---|---|---|
+| 1 | **SAS 9.4 runner 실동작** | 배치 실행, `-noterminal`, WORK 분리, `.lst` 생성 | 미검증 |
+| 2 | **한국어 Windows SAS 로그 인코딩** | CP949 자동 감지 여부 (manifest 의 `log_encoding`) | 미검증 |
+| 3 | **SAS 로그 스캔 규칙** | 의도적 다대다 MERGE 를 넣고 `MERGE_REPEAT_BY` 탐지 확인 | 미검증 |
+| 4 | **SAS assertion 매크로** | `assertions.jsonl` 기록, 의도적 실패가 `FAIL` 로 남는지 | 미검증 |
+| 5 | **R runner 실동작** | `Rscript --vanilla`, wrapper 주입, `sessionInfo` | 미검증 |
+| 6 | **R assertion 함수** | Python/SAS 와 동일한 JSON 형식 | 미검증 |
+| 7 | **vLLM 연동** | endpoint 연결, 모델 서빙 확인, MCP 경유 코드 생성 | **검증됨** (아래) |
+| 8 | **3개 언어 형식 일치** | 같은 필수 키, 같은 `language` 필드, 공통 rule 이름 | 부분 (Python 만) |
+| 9 | **Python runner 실동작** | run 디렉터리, manifest, assertion, 의도적 실패 탐지 | **검증됨** (아래) |
+| 10 | **감사 체인 실환경** | HMAC 체인, manifest 정합성, 고아 run 탐지 | **검증됨** (아래) |
 
-**7번은 모의 서버로 이미 검증했다.** `tests/test_llm_path.py` 가
-MCP 도구 호출 → HTTP 요청 구성 → 응답 파싱 → 코드 펜스 제거까지 실제 왕복으로 확인한다.
-실제 endpoint 에서 남는 확인은 **모델이 실제로 서빙 중인가**와 **응답 품질**뿐이다.
+#### 실환경 검증 결과 (2026-08-03, 로컬 vLLM)
+
+**7. vLLM 연동 — 5/5 통과.** OpenAI 호환 endpoint(Qwen3.6-35B-A3B)에
+실제로 연결해 확인했다.
+
+```
+OK  endpoint 연결        모델 17개
+OK  모델 서빙 중
+OK  MCP 경유 코드 생성    GXPLLM-META 헤더 포함
+```
+
+MCP stdio → HTTP → 응답 파싱 → 코드 펜스 제거까지 실제 왕복이고,
+로컬 LLM 이 `GXPLLM-META` 헤더 규약을 지키는 것도 확인했다.
+
+**9. Python runner — 11/11 통과.** run 디렉터리 생성, `manifest.json`,
+`language` 필드, program SHA-256, assertion 5건 기록,
+`VERIFY_INTENTIONAL_FAIL` 이 `FAIL` 로 남고 그로 인해 run 이 `FAILED` 가
+되는 것, 실행 로그 생성과 해시 기록까지 전부 확인했다.
+
+**10. 감사 체인 — 통과.** benchmark 실행 3 run 이 남긴 증적을
+`verify_audit.py` 로 검증했다. 항목 7건, HMAC-SHA256 서명, 체인 정상,
+manifest 정합성 정상, 감사 기록 없는 run 디렉터리 없음.
+
+**SAS 와 R 은 여전히 미검증이다.** 두 소프트웨어가 설치된 PC 가 필요하다.
+§11.1 의 핵심 판단("SAS 가 Python 보다 나쁜가")은 SAS 없이는 측정 자체가
+불가능하므로, 그 PC 를 확보하기 전에는 일정을 확정하지 말 것.
+
+**7번의 코드 경로는 모의 서버로도 검증돼 있다.** `tests/test_llm_path.py` 가
+MCP 도구 호출 → HTTP 요청 구성 → 응답 파싱 → 코드 펜스 제거까지 확인하므로,
+endpoint 없이도 회귀를 잡을 수 있다.
 
 ```bash
 # 모의 서버로 코드 경로 검증 (endpoint 불필요)
