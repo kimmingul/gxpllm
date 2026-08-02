@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Clinical trial data analysis for Claude Code: a local LLM writes SAS/Python/R, runners execute them with a tamper-evident audit trail, and Claude never sees patient data. The boundary is enforced by hooks, not prompts.",
   "author": {
-    "name": "gxpllm contributors"
+    "name": "Min-Gul Kim"
   },
   "repository": "https://github.com/kimmingul/gxpllm",
   "homepage": "https://github.com/kimmingul/gxpllm",

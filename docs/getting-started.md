@@ -49,21 +49,38 @@
 | `GXPLLM_MAX_TOKENS` | `32768` | 응답 토큰 상한 |
 | `GXPLLM_ENCODING` | `utf-8` | MCP 서버 입출력 인코딩 |
 
-Windows (PowerShell, 사용자 영구 설정):
+설정 방법은 두 가지입니다. 자세한 설명과 주의사항은
+[README 의 설정 절](../README.md#설정) 을 보십시오.
+
+**방법 1 — Claude Code 설정 파일 (권장).** `~/.claude/settings.json` 의 `env` 에
+넣습니다. 모든 프로젝트에 적용되므로 study 를 새로 만들 때마다 다시 설정할
+필요가 없습니다. 기존 설정이 있으면 `env` 키만 추가하십시오.
+
+```json
+{
+  "env": {
+    "GXPLLM_ENDPOINT": "http://dgx-spark.internal:8001/v1",
+    "GXPLLM_MODEL": "Qwen3.6-35B-A3B"
+  }
+}
+```
+
+프로젝트마다 다른 서버를 쓴다면 `.claude/settings.local.json` 에 같은 형태로
+넣습니다. Claude Code 가 git 에서 자동으로 제외합니다.
+
+**방법 2 — OS 환경변수.** 여러 도구가 같은 서버를 공유할 때 씁니다.
 
 ```powershell
-setx GXPLLM_ENDPOINT "http://192.168.0.10:8001/v1"
-setx GXPLLM_MODEL    "Qwen3.6-35B-A3B"
+setx GXPLLM_ENDPOINT "http://dgx-spark.internal:8001/v1"   # Windows
 ```
-
-Linux / macOS (`~/.bashrc` 또는 `~/.zshrc`):
 
 ```bash
-export GXPLLM_ENDPOINT="http://dgx-spark.internal:8001/v1"
-export GXPLLM_MODEL="Qwen3.6-35B-A3B"
+export GXPLLM_ENDPOINT="http://dgx-spark.internal:8001/v1"  # Linux / macOS
 ```
 
-설정 후 Claude Code 를 다시 시작합니다. `claude mcp list` 로 확인하십시오.
+어느 방법이든 설정 후 Claude Code 를 다시 시작해야 적용됩니다.
+`.mcp.json` 의 MCP 서버는 처음 한 번 승인이 필요하며,
+`claude mcp list` 에서 `✔ Connected` 를 확인하십시오.
 
 **`GXPLLM_MAX_TOKENS` 를 낮추지 마십시오.** 추론 모델은 추론과 본문이
 같은 예산을 나눠 씁니다. 실측에서 인구통계 요약표 하나에 추론이 8,000 토큰을

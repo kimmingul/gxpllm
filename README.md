@@ -72,9 +72,7 @@ Medical Writer가 문서를 쓰던 자리에 Claude가 초안을 냅니다.
 /plugin marketplace add https://github.com/kimmingul/gxpllm
 /plugin install gxpllm
 
-# 로컬 LLM 서버 지정 (환경변수로 설정합니다. .mcp.json 은 고치지 마십시오)
-setx GXPLLM_ENDPOINT "http://dgx-spark.internal:8001/v1"
-setx GXPLLM_MODEL    "Qwen3.6-35B-A3B"
+# 로컬 LLM 서버 지정 (아래 "설정" 참조)
 
 # 검증 (SAS·R·DGX Spark 없이도 전부 통과해야 합니다)
 python tests/run_all.py
@@ -87,6 +85,78 @@ claude
 
 전체 흐름은 [시작하기](docs/getting-started.md) 와
 [최소 예제](examples/minimal-study.md) 를 보십시오.
+
+---
+
+## 설정
+
+**`.mcp.json` 을 고치지 마십시오.** 환경변수로 설정합니다.
+
+`.mcp.json` 은 `${VAR:-기본값}` 형태로 되어 있어서 환경변수를 설정하면 그 값이
+이깁니다. 저장소 파일을 직접 고치면 `git pull` 마다 충돌하고, 사내 서버 주소를
+실수로 커밋하게 됩니다.
+
+| 환경변수 | 기본값 | 설명 |
+|---|---|---|
+| `GXPLLM_ENDPOINT` | `http://dgx-spark.internal:8001/v1` | OpenAI 호환 endpoint |
+| `GXPLLM_MODEL` | `Qwen3.6-35B-A3B` | 서빙 중인 모델 이름 |
+| `GXPLLM_API_KEY` | (없음) | 서버가 인증을 요구할 때만 |
+| `GXPLLM_MAX_TOKENS` | `32768` | 응답 토큰 상한 |
+| `GXPLLM_ENCODING` | `utf-8` | MCP 서버 입출력 인코딩 |
+
+### 방법 1 — Claude Code 설정 파일 (권장)
+
+`~/.claude/settings.json` 의 `env` 에 넣습니다. 모든 프로젝트에 적용되므로
+study 를 새로 만들 때마다 다시 설정할 필요가 없습니다.
+
+```json
+{
+  "env": {
+    "GXPLLM_ENDPOINT": "http://dgx-spark.internal:8001/v1",
+    "GXPLLM_MODEL": "Qwen3.6-35B-A3B"
+  }
+}
+```
+
+기존 설정이 있으면 **`env` 키만 추가**하십시오. 파일 전체를 덮어쓰면
+hook, statusLine, plugin 설정이 사라집니다.
+
+프로젝트마다 다른 서버를 쓴다면 `.claude/settings.local.json` 에 같은 형태로
+넣습니다. 이 파일은 Claude Code 가 git 에서 자동으로 제외하므로, 사내 주소가
+커밋될 걱정이 없습니다.
+
+### 방법 2 — OS 환경변수
+
+여러 도구가 같은 서버를 공유할 때 씁니다.
+
+```powershell
+# Windows
+setx GXPLLM_ENDPOINT "http://dgx-spark.internal:8001/v1"
+setx GXPLLM_MODEL    "Qwen3.6-35B-A3B"
+```
+
+```bash
+# Linux / macOS — ~/.bashrc 또는 ~/.zshrc
+export GXPLLM_ENDPOINT="http://dgx-spark.internal:8001/v1"
+export GXPLLM_MODEL="Qwen3.6-35B-A3B"
+```
+
+### 적용 확인
+
+어느 방법이든 **Claude Code 를 재시작해야** 적용됩니다.
+`.mcp.json` 의 MCP 서버는 처음 한 번 승인이 필요합니다.
+
+```bash
+claude mcp list        # local-coder 가 ✔ Connected 인지 확인
+```
+
+### 주의
+
+- **API key 를 저장소에 두지 마십시오.** `.mcp.json` 의 `GXPLLM_API_KEY` 에는
+  기본값이 없습니다. 값이 필요하면 위 방법으로만 주십시오.
+- **`GXPLLM_MAX_TOKENS` 를 낮추지 마십시오.** 추론 모델은 추론과 본문이 같은
+  토큰 예산을 나눠 씁니다. 실측에서 인구통계 요약표 하나에 추론이 8,000 토큰을
+  넘게 썼습니다. 부족하면 응답이 잘리고, 서버는 이를 오류로 거부합니다.
 
 ---
 
