@@ -96,6 +96,13 @@ REQUIRED_FILES = (
 # plugin.json / marketplace.json 이 서로 맞아야 한다
 PLUGIN_NAME = 'gxpllm'
 
+# 매니페스트 4개가 같은 author 를 가리켜야 한다.
+#
+# package.json 은 문자열, 나머지는 {"name": ...} 객체다.
+# marketplace.json 은 최상위 owner 와 plugins[].author 를 둘 다 갖는다.
+# 한 곳만 고치면 배포처마다 다른 저자가 표시된다.
+PLUGIN_AUTHOR = 'Min-Gul Kim'
+
 REQUIRED_COMMANDS = (
     'build-dictionary',
     'draft-protocol',
@@ -116,6 +123,69 @@ REQUIRED_HOOK_EVENTS = ('PreToolUse', 'PostToolUse', 'SessionStart')
 # ============================================================================
 # 메인 로직
 # ============================================================================
+
+def author_name(value):
+    """
+    author / owner 값에서 이름을 꺼낸다
+
+    package.json 은 문자열, plugin 계열은 {"name": ...} 객체를 쓴다.
+
+    Args:
+        value: author 또는 owner 필드 값
+
+    Returns:
+        이름 문자열. 해석할 수 없으면 None
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return value.get('name')
+    return None
+
+
+def check_author_consistency():
+    """
+    매니페스트 4개의 author 가 일치하는지 검증한다
+
+    한 곳만 고치면 marketplace 와 npm 에 다른 저자가 표시된다.
+
+    Returns:
+        문제 리스트
+    """
+    problems = []
+
+    for relative, key in (
+        ('.claude-plugin/plugin.json', 'author'),
+        ('plugin.json', 'author'),
+        ('package.json', 'author'),
+        ('.claude-plugin/marketplace.json', 'owner'),
+    ):
+        path = PLUGIN_ROOT / relative
+        if not path.is_file():
+            continue
+        try:
+            with open(path, encoding='utf-8') as f:
+                manifest = json.load(f)
+        except ValueError:
+            continue  # 파싱 실패는 check_structure 가 이미 보고한다
+
+        found = author_name(manifest.get(key))
+        if found != PLUGIN_AUTHOR:
+            problems.append(
+                f"{relative} 의 {key} 가 '{found}' (기대 '{PLUGIN_AUTHOR}')"
+            )
+
+        # marketplace.json 은 plugins[].author 도 갖는다
+        for entry in manifest.get('plugins') or []:
+            found = author_name(entry.get('author'))
+            if found != PLUGIN_AUTHOR:
+                problems.append(
+                    f"{relative} 의 plugins[{entry.get('name')}].author 가 "
+                    f"'{found}' (기대 '{PLUGIN_AUTHOR}')"
+                )
+
+    return problems
+
 
 def check_structure():
     """
@@ -169,6 +239,8 @@ def check_structure():
 
     if len(set(versions.values())) > 1:
         problems.append(f"버전 불일치: {versions}")
+
+    problems.extend(check_author_consistency())
 
     # hooks.json 형식
     hooks_path = PLUGIN_ROOT / 'hooks' / 'hooks.json'

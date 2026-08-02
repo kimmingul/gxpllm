@@ -3,7 +3,7 @@
   "name": "gxpllm",
   "description": "gxpllm — clinical trial data analysis with an enforced data boundary and audit trail for agentic CLIs",
   "owner": {
-    "name": "gxpllm contributors"
+    "name": "Min-Gul Kim"
   },
   "plugins": [
     {
@@ -11,7 +11,7 @@
       "description": "Clinical trial data analysis for Claude Code: a local LLM writes SAS/Python/R, runners execute them with a tamper-evident audit trail, and Claude never sees patient data. Boundary enforced by PreToolUse hooks. Not yet validated for regulatory submission use.",
       "version": "0.1.0",
       "author": {
-        "name": "gxpllm contributors"
+        "name": "Min-Gul Kim"
       },
       "source": "./",
       "category": "productivity",
