@@ -15,6 +15,7 @@ plugin 배포 전 반드시 통과해야 하는 검증을 모두 실행한다.
 """
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -201,7 +202,7 @@ def check_structure():
     Returns:
         문제 리스트
     """
-    print("\n[1/5] plugin 구조 검증...")
+    print("\n[1/6] plugin 구조 검증...")
     problems = []
 
     for relative in REQUIRED_FILES:
@@ -297,6 +298,118 @@ def check_structure():
     return problems
 
 
+def is_private_ipv4(text):
+    """
+    문자열이 사설 IPv4 주소인지 판단한다
+
+    루프백(127.x)과 0.0.0.0 은 제외한다. 테스트에서 정당하게 쓴다.
+
+    Args:
+        text: 'a.b.c.d' 형태 문자열
+
+    Returns:
+        사설 대역이면 True
+    """
+    parts = text.split('.')
+    if len(parts) != 4:
+        return False
+
+    try:
+        octets = [int(p) for p in parts]
+    except ValueError:
+        return False
+
+    # 버전 문자열(10.0.19041.1 등)을 걸러낸다
+    if any(o < 0 or o > 255 for o in octets):
+        return False
+    if any(len(p) > 1 and p.startswith('0') for p in parts):
+        return False
+
+    a, b = octets[0], octets[1]
+    if a == 10:
+        return True
+    if a == 172 and 16 <= b <= 31:
+        return True
+    if a == 192 and b == 168:
+        return True
+    if a == 169 and b == 254:          # link-local
+        return True
+    return False
+
+
+def check_private_addresses():
+    """
+    추적 중인 파일에 사설 IP 가 들어갔는지 검사한다
+
+    이 저장소는 공개다. 사내 서버 주소가 커밋되면 clone 하는 사람에게
+    내부 네트워크 구성이 드러나고, 히스토리에 남아 되돌리기 어렵다.
+    실제로 tests/test_live_llm.py 의 실행 예시에 사설 IP 가 박혀 있었다.
+
+    endpoint 는 환경변수로 주게 되어 있으므로(README 설정 절)
+    저장소 파일에 실주소가 있을 이유가 없다.
+
+    정당한 예외는 줄 끝에 `gxpllm-allow-private-ip` 를 적어 표시한다.
+
+    git 이 없거나 저장소가 아니면 건너뛴다. 검사 자체가 배포 조건은 아니다.
+
+    Returns:
+        문제 리스트
+    """
+    print("\n[2/6] 사설 IP 노출 검사...")
+    problems = []
+
+    try:
+        result = subprocess.run(
+            ['git', 'ls-files'],
+            cwd=str(PLUGIN_ROOT),
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"  SKIP git 을 실행할 수 없어 건너뜁니다 ({type(exc).__name__})")
+        return problems
+
+    if result.returncode != 0:
+        print("  SKIP git 저장소가 아니어서 건너뜁니다")
+        return problems
+
+    tracked = [
+        line.strip()
+        for line in result.stdout.decode('utf-8', errors='replace').splitlines()
+        if line.strip()
+    ]
+
+    pattern = re.compile(r'\b\d{1,3}(?:\.\d{1,3}){3}\b')
+    scanned = 0
+
+    for relative in tracked:
+        path = PLUGIN_ROOT / relative
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue          # 바이너리나 읽을 수 없는 파일은 대상이 아니다
+
+        scanned += 1
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if 'gxpllm-allow-private-ip' in line:
+                continue
+            for candidate in pattern.findall(line):
+                if is_private_ipv4(candidate):
+                    problems.append(
+                        f"{relative}:{line_no} 에 사설 IP {candidate} — "
+                        f"자리표시자로 바꾸십시오"
+                    )
+
+    for item in problems:
+        print(f"  FAIL {item}")
+    if not problems:
+        print(f"  OK   추적 파일 {scanned:,}개에 사설 IP 없음")
+
+    return problems
+
+
 def run_test_script(label, script_name, index, total):
     """
     테스트 스크립트를 실행한다
@@ -359,8 +472,14 @@ def main():
     results.append(('plugin 구조', not structure_problems,
                     f"{len(structure_problems):,}건 문제" if structure_problems else '정상'))
 
-    total = len(TEST_SCRIPTS) + 1
-    for index, (label, script) in enumerate(TEST_SCRIPTS, start=2):
+    address_problems = check_private_addresses()
+    if address_problems:
+        all_ok = False
+    results.append(('사설 IP 노출', not address_problems,
+                    f"{len(address_problems):,}건 발견" if address_problems else '정상'))
+
+    total = len(TEST_SCRIPTS) + 2
+    for index, (label, script) in enumerate(TEST_SCRIPTS, start=3):
         ok, summary = run_test_script(label, script, index, total)
         results.append((label, ok, summary))
         if not ok:
