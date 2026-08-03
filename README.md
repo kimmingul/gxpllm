@@ -102,6 +102,7 @@ claude
 | `GXPLLM_MODEL` | `Qwen3.6-35B-A3B` | 서빙 중인 모델 이름 |
 | `GXPLLM_API_KEY` | (없음) | 서버가 인증을 요구할 때만 |
 | `GXPLLM_MAX_TOKENS` | `32768` | 응답 토큰 상한 |
+| `GXPLLM_TIMEOUT_SEC` | `300` | 응답 대기 상한 (초) |
 | `GXPLLM_ENCODING` | `utf-8` | MCP 서버 입출력 인코딩 |
 
 ### 방법 1 — Claude Code 설정 파일 (권장)
@@ -144,11 +145,17 @@ export GXPLLM_MODEL="Qwen3.6-35B-A3B"
 ### 적용 확인
 
 어느 방법이든 **Claude Code 를 재시작해야** 적용됩니다.
-`.mcp.json` 의 MCP 서버는 처음 한 번 승인이 필요합니다.
+세션 안에서 `/mcp` 로 확인하십시오.
 
-```bash
-claude mcp list        # local-coder 가 ✔ Connected 인지 확인
 ```
+/mcp        # plugin_gxpllm_local-coder 가 연결되어 있는지 확인
+```
+
+**`-32000` 이 보이면 대개 승인 문제가 아닙니다.** `.mcp.json` 의
+`${CLAUDE_PLUGIN_ROOT}` 는 **설치된 plugin 에만** 주입됩니다. 저장소를 clone 해서
+그 디렉터리를 열면 `.mcp.json` 이 project-scoped 설정으로 읽히고, 변수가 빈 채로
+남아 경로가 깨져 서버가 즉시 죽습니다. `/plugin install` 로 설치했는지 확인하십시오.
+저장소에서 직접 개발하는 경우는 [CONTRIBUTING.md](CONTRIBUTING.md) 를 보십시오.
 
 ### 주의
 
@@ -157,6 +164,10 @@ claude mcp list        # local-coder 가 ✔ Connected 인지 확인
 - **`GXPLLM_MAX_TOKENS` 를 낮추지 마십시오.** 추론 모델은 추론과 본문이 같은
   토큰 예산을 나눠 씁니다. 실측에서 인구통계 요약표 하나에 추론이 8,000 토큰을
   넘게 썼습니다. 부족하면 응답이 잘리고, 서버는 이를 오류로 거부합니다.
+- **응답이 느립니다.** 실측에서 코드 생성 호출 하나가 약 160초였습니다.
+  timeout 으로 실패하면 `GXPLLM_TIMEOUT_SEC` 를 올리십시오. 다만 **상한 자체를
+  없애지는 마십시오** — 서버가 응답하지 않을 때 무한 대기하면 멈춘 것인지
+  기다리는 것인지 구분할 수 없습니다.
 
 ---
 
@@ -244,7 +255,7 @@ exit 1이 되어 경계가 열립니다.
 
 | 스위트 | 내용 |
 |---|---|
-| `test_hooks.py` | 경계 차단 327건 (우회 시도 + 정상 작업 허용) |
+| `test_hooks.py` | 경계 차단 329건 (우회 시도 + 정상 작업 허용 + hook 배선) |
 | `test_false_positives.py` | 일상 명령 오탐 점검 — **오탐은 보안 이슈** |
 | `test_audit.py` | 감사 체인 변조 탐지 9건 |
 | `test_assert_api.py` | 3개 언어 assertion API 일치 + 문서 정합성 |
@@ -268,6 +279,17 @@ SAS 배치 실행, CP949 로그 인코딩, 로그 스캔 규칙, R runner, vLLM 
 **의도적 실패 케이스를 포함해** 확인합니다.
 결과는 `validation/`에 저장되며 **CSV 문서(IQ/OQ)에 첨부해야 합니다.**
 
+**현재 검증 상태** (2026-08-03, [상세](docs/development.md))
+
+| 항목 | 상태 |
+|---|---|
+| vLLM 연동 (MCP 경유 코드 생성 포함) | 실서버 검증 완료 5/5 |
+| Python runner | 실환경 검증 완료 11/11 |
+| 감사 체인 (HMAC, manifest 정합성) | 실환경 검증 완료 |
+| **SAS 9.4 runner** | **미검증** — SAS 설치 PC 필요 |
+| **R runner** | **미검증** — R 설치 PC 필요 |
+| **코드 생성 품질** | **미측정** — 아래 참조 |
+
 ### 코드 생성 품질 실측 — 프로젝트 성립 여부를 좌우
 
 ```bash
@@ -284,6 +306,10 @@ python scripts/benchmark_codegen.py --cases benchmark/cases.yaml --study <경로
 
 **가장 중요한 지표는 "LLM 시간 vs 사람 직접 작성 시간"입니다.**
 여기에 코드 검토 시간을 더했을 때 마이너스면 프로젝트가 성립하지 않습니다.
+
+**아직 측정되지 않았습니다.** 핵심 판단인 "SAS 가 Python 보다 나쁜가" 는
+SAS 없이 측정 자체가 불가능합니다. 측정 일정을 잡을 때는 지연을 감안하십시오 —
+호출 하나가 약 160초이므로 케이스 10건 × 3개 언어면 생성만으로 1.5시간이 넘습니다.
 
 ---
 
@@ -306,6 +332,11 @@ python scripts/benchmark_codegen.py --cases benchmark/cases.yaml --study <경로
 **앞 라운드 수정이 만든 새 구멍**을 찾았습니다.
 경계 코드를 수정하실 때 `tests/run_all.py`를 반드시 통과시키십시오 —
 되돌리면 이미 확인된 우회가 다시 열립니다.
+
+이후 **실사용 설치 검토 1회**에서 결함 3건이 더 나왔습니다 — 허용 규칙의
+앵커 누락, hook 배선 누락, 그리고 저장소 자신의 필수 명령이 막히던 오탐입니다.
+적대적 검토가 아니라 **평범한 개발 작업**에서 나왔습니다.
+경위는 [개발문서 0.8 → 0.9](docs/development.md) 에 있습니다.
 
 ---
 
