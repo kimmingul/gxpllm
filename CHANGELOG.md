@@ -4,6 +4,99 @@
 
 ## [Unreleased]
 
+### 보안 — 경계 결함 세 건
+
+plugin 을 실제로 설치해 개발하는 과정에서 드러났습니다. 적대적 검토가 아니라
+**평범한 개발 작업**에서 나왔다는 점이 셋의 공통점입니다.
+
+- **허용 규칙에 앵커가 없었습니다.** `RUNNER_ALLOW_PATTERN` 이 앵커 없는
+  `search()` 라, 명령 어디에든 runner 경로 문자열이 있기만 하면 구간 전체가
+  인터프리터·변수확장·재귀탐색 검사에서 면제됐습니다. 주석이나 인자에
+  `scripts/run_sas.py` 를 끼워 넣는 것만으로 `python -c` 가 통과했습니다.
+  이제 구간 선두에서 `match()` 로 판정합니다. 재현 케이스 2건을
+  `test_false_positives.py` 의 `MUST_BLOCK_COMMANDS` 에 남겼습니다.
+- **PowerShell 도구가 두 hook 을 모두 통과했습니다.** `guard_file_access` 는
+  `powershell` 을 guard_bash 가 담당한다고 보고 넘기는데, `hooks.json` 의
+  matcher 는 `"Bash"` 뿐이라 받는 쪽이 없었습니다. 위임과 배선이 어긋난 것입니다.
+  matcher 를 `"Bash|PowerShell"` 로 고치고, 위임 목록을 `SHELL_TOOL_NAMES`
+  상수로 분리해 `test_hooks.py` 의 `test_hook_wiring()` 이 둘의 일치를
+  검사하게 했습니다. 배선을 빼먹으면 테스트가 실패합니다.
+- **오탐: 이 저장소 자신의 필수 명령이 막혔습니다.** `python tests/run_all.py`
+  와 `python scripts/verify_environment.py` 는 `CLAUDE.md` 와 `CONTRIBUTING.md`
+  가 지정한 명령인데 인터프리터 차단에 걸렸습니다. 개발자가 문서대로 못 하면
+  plugin 을 끄게 되고, 그것이 가장 확실한 경계 붕괴입니다.
+  `RUNNER_ALLOW_PATTERN` 에 얹지 **않고** `DEV_COMMAND_PATTERN` 을 따로
+  만들었습니다 — 위 첫 번째 결함 때문입니다. 구간 전체 일치, 장옵션만 허용,
+  `check_direct_exec` 안에서만 면제(데이터 경로 검사는 그대로 적용)로
+  세 겹으로 좁혔습니다.
+
+경계 테스트가 **327 → 329건**이 됐습니다.
+
+### 변경 — hook 과 core 의 메시지를 영어로
+
+`hooks/*.py` 와 `gxpllm/core.py` 가 내보내는 모든 메시지를 영어로 바꿨습니다.
+Windows 한국어 환경의 기본 콘솔은 cp949 라 한글 차단 사유가 깨져서
+읽을 수 없었습니다. **차단 이유를 못 읽으면 오탐인지 정당한 차단인지 판단조차
+못 합니다** — 차단 자체보다 나쁩니다.
+
+주석과 docstring 은 한글 그대로입니다. `scripts/*.py` (runner) 의 진행 출력도
+아직 한글입니다.
+
+### 변경 — LLM 설정 우선순위를 환경변수 우선으로
+
+`verify_environment.py` 와 `benchmark_codegen.py` 가 `GXPLLM_ENDPOINT` 를
+전혀 읽지 않고 `.gxpllm/config.json` 만 봤습니다. MCP 서버는 환경변수만 보고
+문서도 환경변수로 설정하라고 안내하는데, `init_study.py` 는 config 에 기본
+endpoint 를 박아 넣습니다. 결과적으로 **문서대로 설정한 사용자가 검증을
+돌리면 엉뚱한 주소를 검증하고 실패**했습니다.
+
+우선순위를 `_common.resolve_llm_endpoint` / `resolve_llm_model` 에 한 번만
+정의했습니다 — `CLI 인자 > GXPLLM_ENDPOINT > config`. study 별로 다른 서버를
+쓰는 경우를 위해 config 는 마지막 순위로 남겼습니다.
+
+### 추가
+
+- `GXPLLM_TIMEOUT_SEC` — MCP 서버의 응답 대기 상한. 다른 설정과 달리
+  이것만 하드코딩(300초)이라 조정할 수 없었습니다. 기본값은 그대로 두고
+  조정 수단만 열었습니다. **상한을 없애는 옵션은 넣지 않았습니다** — 서버가
+  응답하지 않을 때 무한 대기하면 멈춘 것인지 기다리는 것인지 구분할 수 없습니다.
+  `TimeoutError` 가 `URLError` 핸들러를 지나쳐 안내 없는 일반 오류로 떨어지던
+  것도 고쳤습니다.
+- **사설 IP 노출 검사** (`run_all.py`) — 추적 파일에 사내 주소가 커밋됐는지
+  검사합니다. 실제로 `tests/test_live_llm.py` 실행 예시에 사설 IP 가 박혀
+  있었고 push 직전에 사람이 수동으로 잡았습니다. 한 번 올라가면 히스토리에
+  남아 되돌리기 어렵습니다. RFC1918 대역과 link-local 을 잡고, 루프백과
+  버전 문자열은 통과시킵니다. 예외는 `gxpllm-allow-private-ip` 로 표시합니다.
+
+### 수정
+
+- `tests/run_all.py` 와 모든 runner 가 cp949 콘솔에서 `UnicodeEncodeError` 로
+  죽던 문제. 요약 문자열의 em dash 하나 때문이었습니다.
+  `verify_environment.py` 는 **endpoint 연결에 성공한 직후 그 결과를
+  출력하다가** 죽어서, 검증은 통과했는데 실패로 보였습니다.
+  모든 runner 가 `_common` 을 import 하므로 거기서 출력 스트림을 고정했습니다.
+
+### 검증 — 실환경 결과
+
+로컬 vLLM(Qwen3.6-35B-A3B)이 있는 PC 에서 실제로 확인했습니다.
+
+| 항목 | 결과 |
+|---|---|
+| vLLM 연동 (MCP 경유 코드 생성 포함) | 5/5 통과 |
+| Python runner | 11/11 통과 |
+| 감사 체인 (HMAC, manifest 정합성) | 통과 |
+
+MCP stdio → HTTP → 응답 파싱 → 코드 펜스 제거까지 실제 왕복이고, 로컬 LLM 이
+`GXPLLM-META` 헤더 규약을 지키는 것도 확인했습니다.
+
+**SAS 9.4 와 R 은 여전히 미검증입니다.** §11.1 의 핵심 판단
+"SAS 가 Python 보다 나쁜가" 는 SAS 없이 측정 자체가 불가능하므로,
+그 PC 를 확보하기 전에는 일정을 확정하지 마십시오.
+
+**코드 생성 품질은 측정되지 않았습니다.** 지연만 측정했습니다 — 호출 1회 약
+160초. 케이스 10건 × 3개 언어면 생성만으로 1.5시간이 넘으므로 §11.1 측정
+일정에 반영해야 합니다.
+
 ### 수정 — 조용한 실패 두 건
 
 실제 로컬 LLM(Qwen3.6-35B-A3B, lemonade-server)에 붙여 처음 실측한 결과
@@ -38,6 +131,7 @@
 | `GXPLLM_MODEL` | `Qwen3.6-35B-A3B` |
 | `GXPLLM_API_KEY` | (기본값 없음 — 비밀값이므로) |
 | `GXPLLM_MAX_TOKENS` | `32768` |
+| `GXPLLM_TIMEOUT_SEC` | `300` |
 | `GXPLLM_ENCODING` | `utf-8` |
 
 - 서버가 인증을 요구하면 `GXPLLM_API_KEY` 로 `Authorization: Bearer` 를
