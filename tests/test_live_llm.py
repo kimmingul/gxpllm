@@ -16,7 +16,7 @@ AGENTS.md 규칙 6: 전체 테스트는 SAS / R / 라이브 LLM 없이 통과해
 
 실행:
     python tests/test_live_llm.py
-    python tests/test_live_llm.py --endpoint http://192.168.0.124:80/v1 --model Qwen3.6-35B-A3B
+    python tests/test_live_llm.py --endpoint http://<your-llm-host>:8001/v1 --model Qwen3.6-35B-A3B
     python tests/test_live_llm.py --skip-slow
     python tests/test_live_llm.py --output live_llm_report.json
 """
