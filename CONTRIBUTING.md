@@ -154,6 +154,17 @@ Range notation is a single token, so the ref-count check missed it.
 Found in adversarial review round 6.
 ```
 
+**차단 대상 명령을 예시로 적으면 hook 이 커밋을 막습니다.** hook 은 heredoc
+안의 텍스트가 커밋 메시지인지 실행될 명령인지 구분할 수 없고, 구분하려 들면
+그것 자체가 우회 통로가 됩니다. 파일로 넘기십시오.
+
+```bash
+git commit -F <메시지파일>
+```
+
+경계 변경을 커밋할 때 자주 마주칩니다. 메시지에서 예시를 빼지 마십시오 —
+무엇을 막았는지가 이 저장소에서 가장 중요한 기록입니다.
+
 ## 릴리스 전
 
 1. `python tests/run_all.py` 통과
